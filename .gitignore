@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+dist/
+build/
+*.egg-info/
+config/config.toml
+data/
+logs/
+assets/models/*.task
+assets/models/*.tflite
+assets/models/*.part
+

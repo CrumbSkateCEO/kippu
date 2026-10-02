@@ -1,0 +1,2 @@
+"""Presentación fullscreen local."""
+

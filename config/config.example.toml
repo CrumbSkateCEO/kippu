@@ -1,0 +1,51 @@
+[camera]
+index = 0
+# "auto" usa V4L2/GStreamer en Linux, DirectShow/MSMF en Windows y el fallback de OpenCV.
+backend = "auto"
+width = 1280
+height = 720
+fps = 30
+autofocus = true
+# Para foco manual, usar autofocus = false y descomentar un valor admitido por la cámara.
+# focus = 80
+capture_mirrored = false
+read_failure_threshold = 8
+reconnect_delays_seconds = [1, 2, 5]
+
+[vision]
+landmark_confidence = 0.50
+vertical_margin = 0.03
+salute_hold_seconds = 1.0
+pose_detection_confidence = 0.5
+face_confidence = 0.80
+secondary_face_area_ratio = 0.65
+minimum_face_height_px = 80
+
+[print]
+dry_run = true
+expected_width_px = 1181
+expected_height_px = 1772
+expected_dpi = 300
+minimum_printing_message_seconds = 1.5
+monitor_window_seconds = 20
+printer_name = ""
+
+[storage]
+jobs_directory = "data/jobs"
+retention_hours = 24
+
+[ui]
+window_name = "Kippu"
+fullscreen = true
+# Dibuja vectores de pose, malla facial e iris, y ambas manos sobre la vista previa.
+show_landmarks = true
+# Formulario tipo carnet (nombre / organización / rol) antes de cada sesión.
+guest_form_enabled = true
+ask_guest_each_job = true
+card_headline = "¡Bienvenido!"
+form_width = 960
+form_height = 720
+
+[logging]
+directory = "logs"
+level = "INFO"

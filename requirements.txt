@@ -1,0 +1,7 @@
+# Dependencias para entornos virtuales nativos de Windows y Linux.
+numpy>=1.24
+opencv-python>=4.8
+mediapipe>=0.10
+Pillow>=10.0
+pywin32>=306; platform_system == "Windows"
+tomli>=2.0; python_version < "3.11"

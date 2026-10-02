@@ -1,0 +1,2 @@
+"""Adaptador de webcam OpenCV."""
+

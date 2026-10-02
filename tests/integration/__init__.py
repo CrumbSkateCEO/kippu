@@ -1,0 +1,2 @@
+"""Pruebas entre adaptadores fakes."""
+
