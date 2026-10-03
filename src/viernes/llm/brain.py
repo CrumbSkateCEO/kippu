@@ -22,14 +22,12 @@ class ViernesBrain:
         :param max_history: Cantidad de interacciones (Pregunta+Respuesta) a recordar.
         """
         self.model_name = model_name
-        # Multiplicamos por 2 porque una interacción equivale a 2 mensajes (User + Assistant)
-        self.max_history_messages = max_history * 2  
+        self.max_history_messages = max_history * 2
         
-        # System Prompt que define la personalidad y conocimiento del asistente
         self.system_prompt = {
             "role": "system",
             "content": (
-                "Eres Viernes, una asistente de IA interactiva, tecnológica y amigable para el fotomatón 'Kippu'. "
+                "Eres Viernes, una asistente de IA interactiva, tecnológica y amigable para el fotomaton 'Kippu'. "
                 "Tu trabajo es interactuar con el público en una presentación escolar, respondiendo "
                 "de manera concisa y educada. "
                 "Contexto técnico fundamental del proyecto que debes conocer: "
@@ -45,9 +43,7 @@ class ViernesBrain:
             )
         }
         
-        # Historial de conversación inicia solo con el system prompt
         self.conversation_history: List[Dict[str, str]] = [self.system_prompt]
-        
         logger.info(f"ViernesBrain inicializado apuntando al modelo local: {self.model_name}")
 
     def think(self, user_text: str) -> str:
@@ -59,32 +55,24 @@ class ViernesBrain:
             logger.error("La librería 'ollama' no está instalada.")
             return "Error de sistema: No se detecta el motor de razonamiento lógico."
             
-        # 1. Agregar el nuevo mensaje del usuario al historial
         self.conversation_history.append({"role": "user", "content": user_text})
         
-        # 2. Podar el historial si es necesario (Conservando siempre el System Prompt)
         if len(self.conversation_history) > self.max_history_messages + 1:
-            # Retenemos el índice 0 (System Prompt) y los últimos 'max_history_messages'
             self.conversation_history = [self.conversation_history[0]] + self.conversation_history[-self.max_history_messages:]
             
         try:
             logger.info(f"Enviando consulta a Ollama ({self.model_name})...")
-            # 3. Invocación al modelo usando la librería oficial de Ollama
             response = ollama.chat(
                 model=self.model_name,
                 messages=self.conversation_history
             )
             
             ai_text = response['message']['content']
-            
-            # 4. Registrar la respuesta en el historial para contexto futuro
             self.conversation_history.append({"role": "assistant", "content": ai_text})
-            
             return ai_text
             
         except Exception as e:
             logger.error(f"Error conectando con el servicio local de Ollama: {e}")
-            # En caso de error, retiramos la pregunta del historial para no corromper el contexto
             if self.conversation_history and self.conversation_history[-1]["role"] == "user":
                 self.conversation_history.pop()
                 

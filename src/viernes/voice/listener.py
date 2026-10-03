@@ -26,9 +26,8 @@ class VoiceListener:
         self.recognizer = sr.Recognizer()
         self.microphone = sr.Microphone()
         
-        # Ajustes de VAD (Voice Activity Detection)
-        self.recognizer.pause_threshold = 1.0  # Segundos de silencio requeridos para considerar que la frase terminó
-        self.recognizer.energy_threshold = 400 # Sensibilidad inicial
+        self.recognizer.pause_threshold = 1.0
+        self.recognizer.energy_threshold = 400
         self.recognizer.dynamic_energy_threshold = True
         
         self._stop_listening_func = None
@@ -45,14 +44,9 @@ class VoiceListener:
             logger.warning(f"Aviso durante la calibración del micrófono: {e}")
 
     def _audio_callback(self, recognizer: sr.Recognizer, audio: sr.AudioData):
-        """
-        Callback interno que se ejecuta en el hilo secundario (creado por listen_in_background)
-        cada vez que el VAD detecta que el usuario terminó de hablar (pausa o baja energía).
-        """
+        """Callback interno ejecutado en el hilo secundario cuando el VAD detecta fin de frase."""
         logger.info("Audio capturado, procesando transcripción...")
         try:
-            # Transcripción local usando Whisper.
-            # En la primera ejecución descargará el modelo ("base" pesa ~140MB).
             text = recognizer.recognize_whisper(audio, model=self.model_size, language=self.language)
             text = text.strip()
             
@@ -75,7 +69,6 @@ class VoiceListener:
 
         logger.info("Iniciando escucha continua en background...")
         try:
-            # listen_in_background lanza un Daemon Thread que captura audio y llama a _audio_callback
             self._stop_listening_func = self.recognizer.listen_in_background(
                 self.microphone, 
                 self._audio_callback

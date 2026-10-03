@@ -43,8 +43,6 @@ class IPCameraStream:
             
         logger.info(f"Conectando a cámara RTSP: {self.stream_url}")
         
-        # En caso de recibir "0" u otro id numérico para webcam, lo casteamos a int
-        # para que cv2.VideoCapture funcione localmente
         source = int(self.stream_url) if self.stream_url.isdigit() else self.stream_url
         self._cap = cv2.VideoCapture(source)
         
@@ -92,25 +90,20 @@ class IPCameraStream:
         logger.info("Hilo de captura de cámara detenido.")
 
     def get_latest_frame(self) -> Optional[np.ndarray]:
-        """
-        Retorna instantáneamente el último frame leído de la cámara sin bloquear el hilo principal.
-        """
+        """Retorna el último frame capturado sin bloquear el hilo principal."""
         with self._lock:
-            # Retorna una copia para evitar condiciones de carrera si el frame original
-            # se llegara a procesar/modificar en otro hilo mientras OpenCV lo recicla.
             if self.current_frame is not None:
                 return self.current_frame.copy()
             return None
 
     def stop(self) -> None:
-        """Detiene el hilo de lectura y libera los recursos de video de forma segura."""
+        """Detiene el hilo de lectura y libera los recursos de video."""
         if not self._running:
             return
             
         logger.info("Deteniendo stream RTSP...")
         self._running = False
         
-        # Esperar a que termine el hilo si estamos siendo llamados desde el hilo principal
         if threading.current_thread() is not self._thread and self._thread.is_alive():
             self._thread.join(timeout=2.0)
             

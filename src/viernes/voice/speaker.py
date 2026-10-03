@@ -51,15 +51,12 @@ class VoiceSpeaker:
         if PiperVoice is None or pyaudio is None:
             logger.error("Faltan dependencias. Ejecuta: uv pip install piper-tts PyAudio")
             
-        # Determinar el directorio de los modelos
         if models_dir is None:
-            # Asume que estamos en src/viernes/voice/speaker.py
             project_root = Path(__file__).resolve().parent.parent.parent.parent
             models_dir = project_root / "assets" / "voices"
             
         models_dir.mkdir(parents=True, exist_ok=True)
         
-        # Archivos del modelo (voz de alta calidad "es_AR-daniela-high" - español de Argentina)
         self.model_name = model_name
         self.onnx_path = models_dir / f"{self.model_name}.onnx"
         self.json_path = models_dir / f"{self.model_name}.onnx.json"
@@ -70,13 +67,11 @@ class VoiceSpeaker:
         self._running = False
         self.is_speaking = False
         
-        # Iniciar el hilo de procesamiento de voz
         self._start_thread()
         logger.info(f"VoiceSpeaker neuronal ({self.model_name}) inicializado en background.")
 
     def _ensure_model_downloaded(self):
-        """Descarga el modelo neuronal de alta calidad si no existe localmente."""
-        # Desglosa el formato locale-nombre-calidad (ej: es_AR-daniela-high o es_MX-claude-high)
+        """Descarga el modelo neuronal si no existe localmente."""
         parts = self.model_name.split("-")
         if len(parts) == 3:
             locale, name, quality = parts
@@ -95,19 +90,17 @@ class VoiceSpeaker:
 
     def _speaker_worker(self):
         """
-        Bucle infinito del hilo demonio que procesa los mensajes de texto.
-        PiperVoice y PyAudio se inicializan aquí dentro para ser thread-safe.
+        Hilo demonio que procesa la cola de texto.
+        PiperVoice y PyAudio se inicializan aquí para ser thread-safe.
         """
         if not self.onnx_path.exists() or PiperVoice is None:
             logger.error("Motor de voz no disponible.")
             return
 
-        # Cargar la voz en memoria
         logger.info("Cargando modelo neuronal en memoria...")
         voice = PiperVoice.load(str(self.onnx_path))
         sample_rate = voice.config.sample_rate
         
-        # Iniciar el gestor de audio silenciando advertencias de ALSA/JACK
         with _silence_stderr():
             audio = pyaudio.PyAudio()
             try:
@@ -122,12 +115,10 @@ class VoiceSpeaker:
         
         while self._running:
             try:
-                # get() bloquea hasta que haya un elemento o pase el timeout
                 text = self._queue.get(timeout=0.2)
                 self.is_speaking = True
                 logger.info(f"Viernes diciendo: '{text}'")
                 
-                # Usar stream persistente o reintentar abrir uno si falló
                 local_stream = stream
                 if local_stream is None:
                     with _silence_stderr():
@@ -136,7 +127,6 @@ class VoiceSpeaker:
                                                   rate=sample_rate,
                                                   output=True)
                 
-                # Piper sintetiza el audio y PyAudio lo reproduce
                 config = None
                 try:
                     from piper.config import SynthesisConfig
@@ -163,7 +153,6 @@ class VoiceSpeaker:
             finally:
                 self.is_speaking = False
 
-        # Limpiar PyAudio al apagar
         with _silence_stderr():
             if stream is not None:
                 try:
