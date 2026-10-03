@@ -13,8 +13,6 @@ logs/
 assets/models/*.task
 assets/models/*.tflite
 assets/models/*.part
-
-# Modelos de voz (archivos pesados, se descargan automáticamente al ejecutar)
-assets/voices/es_AR-daniela-high.onnx
-assets/voices/es_AR-daniela-high.onnx.json
+assets/voices/.onnx
+assets/voices/.onnx.json
 

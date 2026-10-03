@@ -1,3 +1,5 @@
+todo esto lo hizo claudio, lol
+
 # Kippu 📸🤖
 
 Kiosco interactivo de bienvenida para la presentación escolar de **CrumbSkate**. Combina dos módulos independientes:
@@ -64,7 +66,7 @@ kippu/
 
 ## Instalación
 
-### 1. Clonar el repositorio
+### 1. Clonar el repositorio(si ya tenes el repo en la compu no lo hagas claramente, solo entra al folder)
 
 ```bash
 git clone https://github.com/CrumbSkateCEO/kippu.git
