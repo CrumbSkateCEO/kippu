@@ -17,6 +17,8 @@ class UserCommand(str, Enum):
     CANCEL = "cancel"
     RETRY = "retry"
     QUIT = "quit"
+    TRIGGER = "trigger"
+    EDIT_GUEST = "edit_guest"
 
 
 class FullscreenView(Protocol):
@@ -68,7 +70,13 @@ class OpenCVFullscreenView:
         return {
             27: [UserCommand.CANCEL],
             ord("q"): [UserCommand.QUIT],
+            ord("Q"): [UserCommand.QUIT],
             ord("r"): [UserCommand.RETRY],
+            ord("R"): [UserCommand.RETRY],
+            32: [UserCommand.TRIGGER],  # Barra espaciadora
+            13: [UserCommand.TRIGGER],  # Enter
+            ord("e"): [UserCommand.EDIT_GUEST],
+            ord("E"): [UserCommand.EDIT_GUEST],
         }.get(key, [])
 
     def close(self) -> None:

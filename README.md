@@ -1,8 +1,6 @@
-todo esto lo hizo claudio, lol
+# Kippu
 
-# Kippu 📸🤖
-
-Kiosco interactivo de bienvenida para la presentación escolar de **CrumbSkate**. Combina dos módulos independientes:
+Bienvenidor para la presentación escolar de **CrumbSkate**. Combina dos módulos independientes:
 
 - **`el_bienvenidor`** — Fotomatón que detecta saludos con la mano, captura una foto y genera un carnet impreso.
 - **`viernes`** — Asistente de IA con voz, capaz de escuchar preguntas y responder con síntesis de voz neuronal offline.
@@ -31,7 +29,7 @@ kippu/
 │   │   │   └── speaker.py    # Texto → voz (Piper TTS offline)
 │   │   ├── llm/brain.py      # Respuestas con Ollama (LLM local)
 │   │   ├── ipcam/            # Stream RTSP/webcam con latencia cero
-│   │   └── dashboard/        # HUD visual estilo J.A.R.V.I.S. (PyQt6)
+│   │   └── dashboard/        
 │   │
 │   └── kippu/                # Entry point del comando `kippu`
 │

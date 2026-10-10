@@ -13,6 +13,5 @@ logs/
 assets/models/*.task
 assets/models/*.tflite
 assets/models/*.part
-assets/voices/.onnx
-assets/voices/.onnx.json
+assets/voices/*.onnx
 

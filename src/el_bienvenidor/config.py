@@ -30,6 +30,7 @@ class CameraSettings:
 
 @dataclass(frozen=True)
 class VisionSettings:
+    backend: str = "auto"
     landmark_confidence: float = 0.50
     vertical_margin: float = 0.03
     salute_hold_seconds: float = 1.0
@@ -125,6 +126,7 @@ def load_settings(path: Path) -> AppSettings:
             reconnect_delays_seconds=tuple(float(item) for item in camera.get("reconnect_delays_seconds", [1, 2, 5])),
         ),
         vision=VisionSettings(
+            backend=str(vision.get("backend", "auto")).strip().lower(),
             landmark_confidence=float(vision.get("landmark_confidence", 0.50)),
             vertical_margin=float(vision.get("vertical_margin", 0.03)),
             salute_hold_seconds=float(vision.get("salute_hold_seconds", 1.0)),

@@ -12,6 +12,16 @@ from el_bienvenidor.config import UiSettings
 _MAX_LEN = 40
 _BLOCKED = set("<>{}[]\\`|$")
 
+_BG = "#0b1218"
+_BG_SOFT = "#121c26"
+_GOLD = "#d4b070"
+_CREAM = "#f6f1e8"
+_INK = "#1c2226"
+_MUTED = "#5a6670"
+_TEAL = "#204e5e"
+_HINT = "#c9b08c"
+_PHOTO = "#dce3e8"
+
 
 @dataclass(frozen=True)
 class GuestIntake:
@@ -49,8 +59,8 @@ def _prompt_guest_card_tk(
 
     root = tk.Tk()
     root.title(f"{settings.window_name} — Datos del carnet")
-    root.configure(bg="#121c26")
-    root.minsize(900, 620)
+    root.configure(bg=_BG)
+    root.minsize(980, 680)
     if settings.fullscreen:
         try:
             root.attributes("-fullscreen", True)
@@ -62,46 +72,83 @@ def _prompt_guest_card_tk(
         style.theme_use("clam")
     except tk.TclError:
         pass
-    style.configure("Kippu.TFrame", background="#121c26")
-    style.configure("Card.TFrame", background="#f6f1e8")
-    style.configure("Header.TLabel", background="#121c26", foreground="#fcfaf7", font=("Segoe UI", 28, "bold"))
-    style.configure("Hint.TLabel", background="#121c26", foreground="#d6b08c", font=("Segoe UI", 13))
-    style.configure("CardTitle.TLabel", background="#204e5e", foreground="#fcfaf7", font=("Segoe UI", 16, "bold"))
-    style.configure("Headline.TLabel", background="#f6f1e8", foreground="#204e5e", font=("Segoe UI", 18, "bold"))
-    style.configure("Field.TLabel", background="#121c26", foreground="#d6b08c", font=("Segoe UI", 10))
-    style.configure("Photo.TLabel", background="#dce3e8", foreground="#6e767c", font=("Segoe UI", 14), anchor="center")
-    style.configure("Kippu.TEntry", padding=8, fieldbackground="#fffdf9", font=("Segoe UI", 14))
-    style.configure("Primary.TButton", font=("Segoe UI", 12, "bold"), padding=(18, 10))
-    style.configure("Ghost.TButton", font=("Segoe UI", 11), padding=(14, 8))
+    style.configure("Kippu.TFrame", background=_BG)
+    style.configure("Card.TFrame", background=_CREAM)
+    style.configure("Header.TLabel", background=_BG, foreground="#fcfaf7", font=("Segoe UI", 32, "bold"))
+    style.configure("Hint.TLabel", background=_BG, foreground=_HINT, font=("Segoe UI", 13))
+    style.configure("Eyebrow.TLabel", background=_BG, foreground=_GOLD, font=("Segoe UI", 11, "bold"))
+    style.configure("Field.TLabel", background=_BG, foreground=_GOLD, font=("Segoe UI", 10, "bold"))
+    style.configure("Kippu.TEntry", padding=10, fieldbackground="#fffdf9", foreground=_INK, font=("Segoe UI", 15))
+    style.map("Kippu.TEntry", fieldbackground=[("focus", "#fff8ea")])
+    style.configure(
+        "Primary.TButton",
+        font=("Segoe UI", 12, "bold"),
+        padding=(22, 12),
+        background=_GOLD,
+        foreground=_INK,
+        borderwidth=0,
+    )
+    style.map("Primary.TButton", background=[("active", "#e4c48a")])
+    style.configure(
+        "Ghost.TButton",
+        font=("Segoe UI", 11),
+        padding=(16, 11),
+        background=_BG_SOFT,
+        foreground="#fcfaf7",
+        borderwidth=0,
+    )
+    style.map("Ghost.TButton", background=[("active", "#1b2834")])
 
-    shell = ttk.Frame(root, style="Kippu.TFrame", padding=36)
+    shell = ttk.Frame(root, style="Kippu.TFrame", padding=44)
     shell.pack(fill=tk.BOTH, expand=True)
 
-    ttk.Label(shell, text="Datos del carnet", style="Header.TLabel").pack(anchor="w")
-    ttk.Label(shell, text="Escriba con teclado normal (mayúsculas, tildes y símbolos). Luego confirme para pasar a la foto.", style="Hint.TLabel").pack(anchor="w", pady=(4, 24))
+    ttk.Label(shell, text="KIPPU  ·  RECEPCIÓN", style="Eyebrow.TLabel").pack(anchor="w")
+    ttk.Label(shell, text="Datos del carnet", style="Header.TLabel").pack(anchor="w", pady=(6, 0))
+    ttk.Label(
+        shell,
+        text="Escriba con teclado normal (mayúsculas, tildes y símbolos). Luego confirme para pasar a la foto.",
+        style="Hint.TLabel",
+    ).pack(anchor="w", pady=(8, 28))
+
+    gold_rule = tk.Frame(shell, bg=_GOLD, height=2)
+    gold_rule.pack(fill=tk.X, pady=(0, 28))
 
     body = ttk.Frame(shell, style="Kippu.TFrame")
     body.pack(fill=tk.BOTH, expand=True)
     body.columnconfigure(0, weight=1)
     body.columnconfigure(1, weight=1)
 
-    card = tk.Frame(body, bg="#f6f1e8", highlightthickness=0)
-    card.grid(row=0, column=0, sticky="n", padx=(0, 28))
-    header = tk.Frame(card, bg="#204e5e", height=64)
+    card_shadow = tk.Frame(body, bg="#070c10")
+    card_shadow.grid(row=0, column=0, sticky="n", padx=(0, 36))
+    card = tk.Frame(card_shadow, bg=_CREAM, highlightthickness=0)
+    card.pack(padx=3, pady=5)
+
+    header = tk.Frame(card, bg=_TEAL, height=72)
     header.pack(fill=tk.X)
-    tk.Label(header, text="KIPPU", bg="#204e5e", fg="#fcfaf7", font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT, padx=20, pady=16)
-    photo = tk.Label(card, text="La foto se tomará\ndespués del saludo", bg="#dce3e8", fg="#6e767c", font=("Segoe UI", 13), width=32, height=8)
-    photo.pack(padx=24, pady=20, fill=tk.X)
-    tk.Label(card, text=headline, bg="#f6f1e8", fg="#204e5e", font=("Segoe UI", 18, "bold")).pack(pady=(0, 8))
+    tk.Label(header, text="KIPPU", bg=_TEAL, fg="#fcfaf7", font=("Segoe UI", 17, "bold")).pack(side=tk.LEFT, padx=22, pady=18)
+    tk.Label(header, text="10 × 15 cm", bg=_TEAL, fg=_GOLD, font=("Segoe UI", 10)).pack(side=tk.RIGHT, padx=22)
+
+    photo = tk.Label(
+        card,
+        text="La foto se tomará\ndespués del saludo",
+        bg=_PHOTO,
+        fg=_MUTED,
+        font=("Segoe UI", 13),
+        width=34,
+        height=9,
+    )
+    photo.pack(padx=26, pady=22, fill=tk.X)
+
+    tk.Label(card, text=headline, bg=_CREAM, fg=_TEAL, font=("Segoe UI", 20, "bold")).pack(pady=(0, 10))
     preview_name = tk.StringVar(value="Nombre del visitante")
     preview_org = tk.StringVar(value="Organización")
     preview_role = tk.StringVar(value="Rol / cargo")
-    tk.Label(card, textvariable=preview_name, bg="#f6f1e8", fg="#1c2226", font=("Segoe UI", 14, "bold")).pack()
-    tk.Label(card, textvariable=preview_org, bg="#f6f1e8", fg="#3d4a52", font=("Segoe UI", 12)).pack(pady=(4, 0))
-    tk.Label(card, textvariable=preview_role, bg="#f6f1e8", fg="#3d4a52", font=("Segoe UI", 12)).pack(pady=(2, 20))
-    footer = tk.Frame(card, bg="#204e5e", height=36)
+    tk.Label(card, textvariable=preview_name, bg=_CREAM, fg=_INK, font=("Segoe UI", 15, "bold")).pack()
+    tk.Label(card, textvariable=preview_org, bg=_CREAM, fg="#3d4a52", font=("Segoe UI", 12)).pack(pady=(6, 0))
+    tk.Label(card, textvariable=preview_role, bg=_CREAM, fg="#3d4a52", font=("Segoe UI", 12)).pack(pady=(2, 28))
+    footer = tk.Frame(card, bg=_TEAL, height=40)
     footer.pack(fill=tk.X, side=tk.BOTTOM)
-    tk.Label(footer, text="Carnet 10 × 15 cm", bg="#204e5e", fg="#fcfaf7", font=("Segoe UI", 9)).pack(pady=8)
+    tk.Label(footer, text="Carnet de bienvenida", bg=_TEAL, fg="#fcfaf7", font=("Segoe UI", 9)).pack(pady=10)
 
     form = ttk.Frame(body, style="Kippu.TFrame")
     form.grid(row=0, column=1, sticky="nwe")
@@ -132,9 +179,9 @@ def _prompt_guest_card_tk(
     )
     entries: list[ttk.Entry] = []
     for label, var in fields:
-        ttk.Label(form, text=label.upper(), style="Field.TLabel").pack(anchor="w", pady=(0, 4))
-        entry = ttk.Entry(form, textvariable=var, style="Kippu.TEntry", font=("Segoe UI", 14))
-        entry.pack(fill=tk.X, pady=(0, 16), ipady=6)
+        ttk.Label(form, text=label.upper(), style="Field.TLabel").pack(anchor="w", pady=(0, 6))
+        entry = ttk.Entry(form, textvariable=var, style="Kippu.TEntry", font=("Segoe UI", 15))
+        entry.pack(fill=tk.X, pady=(0, 18), ipady=8)
         entries.append(entry)
 
     def _confirm(_event: object | None = None) -> None:
@@ -146,12 +193,61 @@ def _prompt_guest_card_tk(
         root.destroy()
 
     actions = ttk.Frame(form, style="Kippu.TFrame")
-    actions.pack(fill=tk.X, pady=(8, 0))
-    ttk.Button(actions, text="Confirmar y abrir cámara", style="Primary.TButton", command=_confirm).pack(side=tk.LEFT)
-    ttk.Button(actions, text="Continuar como visitante", style="Ghost.TButton", command=_skip).pack(side=tk.LEFT, padx=(12, 0))
-    ttk.Label(form, text="Enter confirma  ·  Esc continúa como Visitante", style="Hint.TLabel").pack(anchor="w", pady=(18, 0))
+    actions.pack(fill=tk.X, pady=(10, 0))
+    confirm_btn = ttk.Button(actions, text="Confirmar y abrir cámara", style="Primary.TButton", command=_confirm)
+    confirm_btn.pack(side=tk.LEFT)
+    skip_btn = ttk.Button(actions, text="Continuar como visitante", style="Ghost.TButton", command=_skip)
+    skip_btn.pack(side=tk.LEFT, padx=(12, 0))
+    ttk.Label(
+        form,
+        text="Enter o Tab: siguiente campo (en el último confirma)   ·   Ctrl+Enter: confirmar directo   ·   Esc: como Visitante",
+        style="Hint.TLabel",
+    ).pack(anchor="w", pady=(20, 0))
 
-    root.bind("<Return>", _confirm)
+    for idx, entry in enumerate(entries):
+        def _make_enter_handler(i: int):
+            def _handler(_event: object) -> str:
+                if i < len(entries) - 1:
+                    next_e = entries[i + 1]
+                    next_e.focus_set()
+                    next_e.icursor(tk.END)
+                else:
+                    _confirm()
+                return "break"
+            return _handler
+
+        def _make_down_handler(i: int):
+            def _handler(_event: object) -> str:
+                if i < len(entries) - 1:
+                    next_e = entries[i + 1]
+                    next_e.focus_set()
+                    next_e.icursor(tk.END)
+                else:
+                    confirm_btn.focus_set()
+                return "break"
+            return _handler
+
+        def _make_up_handler(i: int):
+            def _handler(_event: object) -> str:
+                if i > 0:
+                    prev_e = entries[i - 1]
+                    prev_e.focus_set()
+                    prev_e.icursor(tk.END)
+                return "break"
+            return _handler
+
+        entry.bind("<Return>", _make_enter_handler(idx))
+        entry.bind("<KP_Enter>", _make_enter_handler(idx))
+        entry.bind("<Down>", _make_down_handler(idx))
+        entry.bind("<Up>", _make_up_handler(idx))
+
+    confirm_btn.bind("<Return>", lambda _e: (_confirm(), "break")[1])
+    confirm_btn.bind("<KP_Enter>", lambda _e: (_confirm(), "break")[1])
+    skip_btn.bind("<Return>", lambda _e: (_skip(), "break")[1])
+    skip_btn.bind("<KP_Enter>", lambda _e: (_skip(), "break")[1])
+
+    root.bind("<Control-Return>", _confirm)
+    root.bind("<Control-KP_Enter>", _confirm)
     root.bind("<Escape>", _skip)
     entries[0].focus_set()
     _refresh()

@@ -9,13 +9,13 @@ from typing import Any
 
 
 # BGR para OpenCV
-NAVY = (62, 42, 22)
+NAVY = (48, 28, 12)
 CREAM = (236, 241, 246)
 GOLD = (140, 176, 214)
 WHITE = (252, 250, 247)
 MUTED = (168, 164, 158)
 ACCENT = (94, 78, 32)
-TEAL = (148, 122, 42)
+TEAL = (168, 132, 42)
 OK = (120, 196, 96)
 HOLD = (90, 200, 255)
 

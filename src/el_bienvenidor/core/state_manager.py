@@ -10,14 +10,14 @@ from el_bienvenidor.domain.models import AppSnapshot, AppState, Transition
 
 _MESSAGES: dict[AppState, str] = {
     AppState.STARTUP: "Preparando la cámara…",
-    AppState.IDLE: "Levante una mano por encima del hombro",
+    AppState.IDLE: "Levante una mano o pulse Espacio para capturar",
     AppState.GREETING_HELD: "Perfecto, mantenga el saludo",
     AppState.COUNTDOWN: "Sonría, vamos a capturar",
     AppState.PROCESSING: "Componiendo su carnet…",
     AppState.PRINTING: "Enviando a impresión…",
     AppState.CAMERA_ERROR: "Revise la cámara y pulse R",
     AppState.PRINTER_ERROR: "Revise papel, tapa y cola de impresión",
-    AppState.PROCESSING_ERROR: "No pudimos preparar la foto. Inténtelo de nuevo.",
+    AppState.PROCESSING_ERROR: "No pudimos preparar la foto. Pulse R para reintentar.",
     AppState.STOPPED: "Kippu detenido",
 }
 
@@ -69,6 +69,7 @@ class StateManager:
         if self._state is AppState.IDLE:
             return {
                 AppEventType.GREETING_STARTED: AppState.GREETING_HELD,
+                AppEventType.HOLD_MET: AppState.COUNTDOWN,
                 AppEventType.CAMERA_FAILURE: AppState.CAMERA_ERROR,
                 AppEventType.PRINTER_FAILURE: AppState.PRINTER_ERROR,
             }.get(event.kind)
@@ -97,14 +98,19 @@ class StateManager:
                 AppEventType.PRINT_COMPLETED: AppState.IDLE,
                 AppEventType.PRINTER_FAILURE: AppState.PRINTER_ERROR,
             }.get(event.kind)
-        if self._state is AppState.PROCESSING_ERROR and event.kind is AppEventType.ACKNOWLEDGE:
+        if self._state is AppState.PROCESSING_ERROR and event.kind in {AppEventType.ACKNOWLEDGE, AppEventType.RETRY}:
             return AppState.IDLE
         return None
 
     def countdown_finished(self, now_monotonic_s: float) -> bool:
         return self._state is AppState.COUNTDOWN and (now_monotonic_s - self._state_since) >= self._countdown_seconds
 
-    def snapshot(self, now_monotonic_s: float, greeting_elapsed_s: float = 0.0) -> AppSnapshot:
+    def snapshot(
+        self,
+        now_monotonic_s: float,
+        greeting_elapsed_s: float = 0.0,
+        guest_name: str | None = None,
+    ) -> AppSnapshot:
         countdown_value: int | None = None
         if self._state is AppState.COUNTDOWN:
             elapsed = max(0.0, now_monotonic_s - self._state_since)
@@ -117,5 +123,6 @@ class StateManager:
             job_id=self._job_id,
             greeting_elapsed_s=greeting_elapsed_s,
             countdown_value=countdown_value,
+            guest_name=guest_name,
         )
 

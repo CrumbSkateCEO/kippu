@@ -27,6 +27,7 @@ from el_bienvenidor.ui.fullscreen_view import FullscreenView, HeadlessView, Open
 from el_bienvenidor.ui.guest_form import GuestIntake, prompt_guest_card
 from el_bienvenidor.vision.face_detector import FaceCropPolicy, FaceDetector, MediaPipeFaceDetector
 from el_bienvenidor.vision.gesture_gate import GestureGate
+from el_bienvenidor.vision.opencv_detectors import OpenCVFaceDetector, OpenCVPoseDetector, cpu_has_avx
 from el_bienvenidor.vision.pose_detector import MediaPipePoseDetector, PoseDetector
 
 LOGGER = logging.getLogger(__name__)
@@ -127,8 +128,9 @@ class Application:
                 self._tick_camera_and_vision(now)
                 self._acknowledge_temporary_errors(now)
                 landmarks = self._last_landmark_map if self.settings.ui.show_landmarks else None
+                guest_name = self._guest.guest_name if self._guest else None
                 self.view.render(
-                    self.state_manager.snapshot(now, self.gesture_gate.state.elapsed(now)),
+                    self.state_manager.snapshot(now, self.gesture_gate.state.elapsed(now), guest_name=guest_name),
                     self._last_frame,
                     landmarks,
                 )
@@ -183,8 +185,13 @@ class Application:
             elif command is UserCommand.CANCEL:
                 self.state_manager.dispatch(AppEvent(AppEventType.CANCEL), now)
                 self.gesture_gate.reset()
-            elif command is UserCommand.RETRY and self.state_manager.state in {AppState.CAMERA_ERROR, AppState.PRINTER_ERROR}:
+            elif command is UserCommand.RETRY and self.state_manager.state in {AppState.CAMERA_ERROR, AppState.PRINTER_ERROR, AppState.PROCESSING_ERROR}:
                 self.state_manager.dispatch(AppEvent(AppEventType.RETRY), now)
+            elif command is UserCommand.EDIT_GUEST and self.state_manager.state is AppState.IDLE:
+                self._needs_guest_intake = True
+            elif command is UserCommand.TRIGGER and self.state_manager.state in {AppState.IDLE, AppState.GREETING_HELD}:
+                self.state_manager.dispatch(AppEvent(AppEventType.HOLD_MET), now)
+                self.gesture_gate.reset()
 
     def _ensure_started(self, now: float) -> None:
         state = self.state_manager.state
@@ -281,6 +288,7 @@ class Application:
             elif event.kind is JobEventType.PRINT_COMPLETED:
                 self.state_manager.dispatch(AppEvent(AppEventType.PRINT_COMPLETED, event.job_id, event.message), now)
                 if self.settings.ui.ask_guest_each_job:
+                    self._guest = None
                     self._needs_guest_intake = True
             elif event.kind is JobEventType.PROCESSING_FAILED:
                 self.state_manager.dispatch(AppEvent(AppEventType.PROCESSING_FAILED, event.job_id, event.message), now)
@@ -318,8 +326,22 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
     else:
         camera = OpenCVCameraService(settings.camera)
         models_dir = settings.project_root / "assets" / "models"
-        pose_detector = MediaPipePoseDetector(settings.vision, models_dir)
-        face_detector = MediaPipeFaceDetector(settings.vision, models_dir)
+        use_opencv = (
+            settings.vision.backend == "opencv"
+            or (settings.vision.backend == "auto" and not cpu_has_avx())
+        )
+        if use_opencv:
+            LOGGER.info("Inicializando detectores de visión OpenCV (compatible con CPUs sin AVX)...")
+            pose_detector = OpenCVPoseDetector(settings.vision, models_dir)
+            face_detector = OpenCVFaceDetector(settings.vision, models_dir)
+        else:
+            try:
+                pose_detector = MediaPipePoseDetector(settings.vision, models_dir)
+                face_detector = MediaPipeFaceDetector(settings.vision, models_dir)
+            except Exception as error:
+                LOGGER.warning("Fallo al inicializar MediaPipe (%s). Usando respaldo OpenCV.", error)
+                pose_detector = OpenCVPoseDetector(settings.vision, models_dir)
+                face_detector = OpenCVFaceDetector(settings.vision, models_dir)
         if real_printer:
             if sys.platform == "win32":
                 printer = WindowsPrinter(settings.printing)

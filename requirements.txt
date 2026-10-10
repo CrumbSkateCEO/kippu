@@ -5,3 +5,14 @@ mediapipe>=0.10
 Pillow>=10.0
 pywin32>=306; platform_system == "Windows"
 tomli>=2.0; python_version < "3.11"
+
+# Control PTZ de cámara IP vía ONVIF (Gadnic/ICSee y compatible)
+onvif-zeep>=0.2.12
+
+# Viernes (Asistente de voz y HUD)
+PyQt6>=6.5
+ollama>=0.3
+SpeechRecognition>=3.10
+piper-tts>=1.2
+pyaudio>=0.2.14
+openai-whisper>=20231117

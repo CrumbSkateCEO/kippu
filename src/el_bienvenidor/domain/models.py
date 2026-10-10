@@ -189,6 +189,7 @@ class AppSnapshot:
     job_id: JobId | None = None
     greeting_elapsed_s: float = 0.0
     countdown_value: int | None = None
+    guest_name: str | None = None
 
 
 @dataclass(frozen=True)

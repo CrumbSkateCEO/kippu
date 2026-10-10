@@ -28,6 +28,14 @@ _MODELS = {
         "blaze_face_short_range.tflite",
         "https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite",
     ),
+    "yunet": (
+        "face_detection_yunet_2023mar.onnx",
+        "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+    ),
+    "haarcascade": (
+        "haarcascade_frontalface_default.xml",
+        "https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml",
+    ),
 }
 
 

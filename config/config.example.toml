@@ -49,3 +49,34 @@ form_height = 720
 [logging]
 directory = "logs"
 level = "INFO"
+
+# ---------------------------------------------------------------------------
+# Cámara IP (Gadnic/ICSee — compatible ONVIF)
+# ---------------------------------------------------------------------------
+[ipcam]
+# URL RTSP del stream de video (ajustar usuario, contraseña, IP y canal)
+# Ejemplo: rtsp://admin:12345@192.168.1.100:554/cam/realmonitor?channel=1&subtype=0
+rtsp_url = "rtsp://admin:12345@192.168.1.100:554/cam/realmonitor?channel=1&subtype=0"
+
+# IP de la cámara para el control PTZ vía ONVIF
+# Dejar vacío ("") para deshabilitar el control de movimiento
+host = "192.168.1.100"
+
+# Puerto ONVIF (típico: 8899 en Gadnic/ICSee, 80 en Hikvision)
+onvif_port = 8899
+
+# Credenciales de la cámara
+user = "admin"
+password = "12345"
+
+# ---------------------------------------------------------------------------
+# Modelo LLM (debe ser multimodal para soporte de visión)
+# ---------------------------------------------------------------------------
+[llm]
+# Modelos multimodales recomendados con Ollama:
+#   llava        — 7B, buena relación velocidad/calidad (RECOMENDADO)
+#   llava-phi3   — 3.8B, muy rápido en CPU/GPU modestas
+#   moondream    — 1.8B, ultraligero (calidad reducida)
+#   bakllava     — 7B, basado en Mistral
+# Para solo texto (sin visión): llama3.1, phi3, mistral
+model = "llava"
