@@ -1,0 +1,93 @@
+[camera]
+index = 0
+# "auto" usa V4L2/GStreamer en Linux, DirectShow/MSMF en Windows y el fallback de OpenCV.
+backend = "auto"
+width = 1280
+height = 720
+fps = 30
+autofocus = true
+# Para foco manual, usar autofocus = false y descomentar un valor admitido por la cámara.
+# focus = 80
+capture_mirrored = false
+read_failure_threshold = 8
+reconnect_delays_seconds = [1, 2, 5]
+
+[vision]
+landmark_confidence = 0.50
+vertical_margin = 0.03
+salute_hold_seconds = 1.0
+pose_detection_confidence = 0.5
+face_confidence = 0.80
+secondary_face_area_ratio = 0.65
+minimum_face_height_px = 80
+
+[print]
+dry_run = true
+expected_width_px = 1181
+expected_height_px = 1772
+expected_dpi = 300
+minimum_printing_message_seconds = 1.5
+monitor_window_seconds = 20
+printer_name = ""
+
+[storage]
+jobs_directory = "data/jobs"
+retention_hours = 24
+
+[ui]
+window_name = "Kippu"
+fullscreen = true
+# Dibuja vectores de pose, malla facial e iris, y ambas manos sobre la vista previa.
+show_landmarks = true
+# Formulario tipo carnet (nombre / organización / rol) antes de cada sesión.
+guest_form_enabled = true
+ask_guest_each_job = true
+card_headline = "¡Bienvenido!"
+form_width = 960
+form_height = 720
+
+[logging]
+directory = "logs"
+level = "INFO"
+
+# ---------------------------------------------------------------------------
+# Cámara IP (compatible RTSP/ONVIF)
+# ---------------------------------------------------------------------------
+[ipcam]
+# URL RTSP del stream de video principal.
+# Formato: rtsp://usuario:contraseña@ip:554/live/ch0
+rtsp_url = "rtsp://frww:nc6dd3@192.168.1.10:554/live/ch0"
+
+# Opciones FFmpeg para baja latencia (separadas por |)
+# Estas se pasan directamente al backend FFmpeg de OpenCV.
+# fflags nobuffer  — no acumula frames en el buffer de FFmpeg
+# flags  low_delay — minimiza la latencia de decodificación
+# rtsp_transport tcp — usa TCP en vez de UDP (más estable en LAN)
+# timeout 2000000  — timeout de conexión en microsegundos (2s)
+rtsp_ffmpeg_options = "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|timeout;2000000|analyzeduration;100000|probesize;32"
+
+# Descartar frames cuando el decodificador va atrasado (evita lag acumulado)
+rtsp_drop_frames = true
+
+# IP de la cámara para el control PTZ vía ONVIF.
+# Dejar vacío ("") para deshabilitar el control de movimiento.
+host = "192.168.1.10"
+
+# Puerto ONVIF (típico: 8899 en Gadnic/ICSee, 80 en Hikvision/Dahua)
+onvif_port = 8899
+
+# Credenciales de la cámara (se usan tanto para RTSP como para ONVIF)
+user = "frww"
+password = "nc6dd3"
+
+# ---------------------------------------------------------------------------
+# Modelo LLM (debe ser multimodal para soporte de visión)
+# ---------------------------------------------------------------------------
+[llm]
+# Modelos multimodales recomendados con Ollama:
+#   llava        — 7B, buena relación velocidad/calidad (RECOMENDADO)
+#   llava-phi3   — 3.8B, muy rápido en CPU/GPU modestas
+#   moondream    — 1.8B, ultraligero (calidad reducida)
+#   bakllava     — 7B, basado en Mistral
+# Para solo texto (sin visión): llama3.1, phi3, mistral
+model = "llama 3.1"

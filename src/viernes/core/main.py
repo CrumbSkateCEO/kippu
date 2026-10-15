@@ -84,9 +84,18 @@ class ViernesController(QObject):
         ipcam_cfg = cfg.get("ipcam", {})
         llm_cfg = cfg.get("llm", {})
 
-        # --- Cámara RTSP ---
+        # --- Cámara RTSP con opciones FFmpeg de baja latencia ---
         rtsp_url = ipcam_cfg.get("rtsp_url", "0")
-        self.camera = IPCameraStream(rtsp_url)
+        ffmpeg_options = ipcam_cfg.get(
+            "rtsp_ffmpeg_options",
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|timeout;2000000|analyzeduration;100000|probesize;32",
+        )
+        drop_frames = ipcam_cfg.get("rtsp_drop_frames", True)
+        self.camera = IPCameraStream(
+            rtsp_url,
+            ffmpeg_options=ffmpeg_options,
+            drop_frames=drop_frames,
+        )
 
         # --- PTZ ONVIF (opcional) ---
         self.ptz: PTZController | None = None
@@ -118,7 +127,17 @@ class ViernesController(QObject):
 
         # --- Voz ---
         self.listener = VoiceListener(on_speech_detected=self._on_speech_detected_callback)
-        self.speaker = VoiceSpeaker()
+        # VoiceSpeaker puede fallar si piper-tts o PyAudio no están instalados.
+        # En ese caso Viernes funciona sin voz (solo texto en pantalla).
+        try:
+            self.speaker: VoiceSpeaker | None = VoiceSpeaker()
+        except Exception as exc:
+            logger.warning(
+                "[TTS] No se pudo inicializar VoiceSpeaker: %s. "
+                "Viernes continuará sin síntesis de voz.",
+                exc,
+            )
+            self.speaker = None
 
         # --- Estado de inferencia ---
         self._inference_lock = threading.Lock()  # Solo una inferencia a la vez
@@ -151,7 +170,8 @@ class ViernesController(QObject):
             else "Sistemas en línea. Te escucho."
         )
         self.dashboard.update_subtitle(f"Viernes: {saludo}")
-        self.speaker.speak(saludo)
+        if self.speaker:
+            self.speaker.speak(saludo)
 
     # -----------------------------------------------------------------------
     # Callbacks (desde hilos externos → emiten señales al hilo Qt)
@@ -177,7 +197,8 @@ class ViernesController(QObject):
         """
         # Cancelar respuesta anterior si Viernes aún estaba hablando/pensando
         self.brain.cancel_current()
-        self.speaker.interrupt()
+        if self.speaker:
+            self.speaker.interrupt()
 
         self.dashboard.update_subtitle(f"Usuario: {text}")
         threading.Thread(
@@ -206,13 +227,15 @@ class ViernesController(QObject):
                     full_response.append(sentence)
 
                     # Enviar cada oración al TTS y a la UI inmediatamente
-                    self.speaker.speak(sentence)
+                    if self.speaker:
+                        self.speaker.speak(sentence)
                     self.signal_sentence_ready.emit(sentence)
 
             except Exception as e:
                 logger.error(f"Error en stream de respuesta: {e}")
                 error_msg = "Hubo un error procesando tu pregunta."
-                self.speaker.speak(error_msg)
+                if self.speaker:
+                    self.speaker.speak(error_msg)
                 self.signal_sentence_ready.emit(error_msg)
 
             finally:
@@ -241,7 +264,8 @@ class ViernesController(QObject):
         logger.info("[APAGADO] Deteniendo módulos...")
         self.brain.cancel_current()
         self.listener.stop()
-        self.speaker.stop()
+        if self.speaker:
+            self.speaker.stop()
         self.camera.stop()
         if self.ptz:
             self.ptz.stop()
