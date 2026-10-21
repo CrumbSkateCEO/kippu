@@ -42,9 +42,7 @@ class PoseDetector(Protocol):
 
 
 def _confidence(point: Landmark) -> float:
-    visibility = point.visibility if point.visibility > 0 else 1.0
-    presence = point.presence if point.presence > 0 else 1.0
-    return min(visibility, presence)
+    return min(point.visibility, point.presence)
 
 
 def _candidate(points: tuple[Landmark | None, ...], shoulder: Landmark | None, settings: VisionSettings) -> tuple[bool, float, Landmark | None]:
@@ -84,8 +82,10 @@ def _as_landmark(point: Any) -> Landmark | None:
     y = getattr(point, "y", None)
     if x is None or y is None:
         return None
-    visibility = float(getattr(point, "visibility", None) or 1.0)
-    presence = float(getattr(point, "presence", None) or 1.0)
+    raw_vis = getattr(point, "visibility", None)
+    visibility = float(raw_vis) if raw_vis is not None else 1.0
+    raw_pres = getattr(point, "presence", None)
+    presence = float(raw_pres) if raw_pres is not None else 1.0
     return Landmark(float(x), float(y), visibility, presence)
 
 

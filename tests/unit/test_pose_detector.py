@@ -25,6 +25,15 @@ class PoseRuleTests(unittest.TestCase):
         )
         self.assertFalse(is_salute(landmarks, VisionSettings()).salute_detected)
 
+    def test_zero_visibility_is_not_salute(self) -> None:
+        landmarks = PoseLandmarks(
+            left_wrist=Landmark(0.4, 0.20, 0.0, 0.0),
+            left_shoulder=Landmark(0.4, 0.40, 0.9, 0.9),
+            right_wrist=None,
+            right_shoulder=None,
+        )
+        self.assertFalse(is_salute(landmarks, VisionSettings()).salute_detected)
+
     def test_index_fingertip_over_shoulder_is_salute(self) -> None:
         landmarks = PoseLandmarks(
             left_wrist=Landmark(0.4, 0.42, 0.9, 0.9),

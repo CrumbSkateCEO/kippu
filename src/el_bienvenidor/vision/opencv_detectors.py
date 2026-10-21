@@ -237,31 +237,33 @@ class OpenCVPoseDetector:
         face_layer = LandmarkLayer(name="face", points=tuple(face_points), connections=tuple(face_connections))
 
         # Detección de saludo:
-        # Estimamos hombros justo por debajo de la base del rostro
-        shoulder_y = min(h, int(fy + fh * 1.15))
-        shoulder_norm = ( (fx + fw * 0.5) / w, shoulder_y / h )
+        # Estimamos hombros por debajo de la base del rostro (proporción anatómica: ~1.4x altura de rostro)
+        shoulder_y = min(h, int(fy + fh * 1.40))
+        shoulder_norm = ((fx + fw * 0.5) / w, shoulder_y / h)
+        vertical_margin_px = max(12, int(h * self._settings.vertical_margin))
 
-        # Regiones laterales superiores (a la izquierda y derecha de la cabeza, arriba del hombro)
-        # Zona Izquierda (pantalla)
-        z1_x0, z1_x1 = max(0, int(fx - fw * 1.6)), max(0, int(fx - fw * 0.1))
-        # Zona Derecha (pantalla)
-        z2_x0, z2_x1 = min(w, int(fx + fw * 1.1)), min(w, int(fx + fw * 2.6))
-        z_y0 = max(0, int(fy - fh * 0.6))
-        z_y1 = shoulder_y
+        # Regiones laterales superiores para buscar mano alzada:
+        # 1. Claramente separadas del rostro/orejas/cuello para no dar falsos positivos con la cabeza.
+        # 2. Claramente arriba del hombro (el saludo se hace a la altura de la cara o más arriba).
+        z1_x0, z1_x1 = max(0, int(fx - fw * 2.5)), max(0, int(fx - fw * 0.35))
+        z2_x0, z2_x1 = min(w, int(fx + fw * 1.35)), min(w, int(fx + fw * 2.5))
+        z_y0 = max(0, int(fy - fh * 1.2))
+        z_y1 = min(h, int(fy + fh * 0.95))
 
         salute_detected = False
         hand_norm = None
         salute_conf = 0.0
         detail = "Salude con la mano o presione ESPACIO"
 
-        # Comprobar tono de piel y movimiento en las zonas superiores
+        # Máscara de tono de piel en espacio YCrCb
         ycrcb = cv2.cvtColor(frame.image_bgr, cv2.COLOR_BGR2YCrCb)
         cr = ycrcb[:, :, 1]
         cb = ycrcb[:, :, 2]
-        skin_mask = (cr >= 133) & (cr <= 173) & (cb >= 77) & (cb <= 127)
+        skin_mask = ((cr >= 133) & (cr <= 173) & (cb >= 77) & (cb <= 127)).astype(np.uint8) * 255
 
         face_area_px = fw * fh
-        min_hand_pixels = max(30, int(face_area_px * 0.06))
+        min_hand_area = max(120, int(face_area_px * 0.10))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
 
         pose_layers: list[LandmarkLayer] = [face_layer]
 
@@ -270,45 +272,42 @@ class OpenCVPoseDetector:
                 continue
 
             sub_skin = skin_mask[z_y0:z_y1, z_x0:z_x1]
-            skin_count = int(np.sum(sub_skin))
+            clean_skin = cv2.morphologyEx(sub_skin, cv2.MORPH_OPEN, kernel)
 
-            motion_count = 0
-            if motion_map is not None:
-                sub_motion = motion_map[z_y0:z_y1, z_x0:z_x1]
-                motion_count = int(np.sum(sub_motion > 0))
+            contours, _ = cv2.findContours(clean_skin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
 
-            if skin_count >= min_hand_pixels or motion_count >= min_hand_pixels:
-                # Mano detectada en la zona
-                salute_detected = True
-                salute_conf = min(1.0, max(skin_count, motion_count) / float(face_area_px * 0.2))
-                salute_conf = max(0.7, salute_conf)
+            largest = max(contours, key=cv2.contourArea)
+            area = float(cv2.contourArea(largest))
 
-                # Centro de masa del gesto
-                if skin_count >= min_hand_pixels:
-                    ys, xs = np.where(sub_skin)
-                    hx = z_x0 + int(np.mean(xs))
-                    hy = z_y0 + int(np.mean(ys))
-                else:
-                    hx = (z_x0 + z_x1) // 2
-                    hy = (z_y0 + z_y1) // 2
+            if area >= min_hand_area:
+                M = cv2.moments(largest)
+                if M["m00"] > 0:
+                    hx = z_x0 + int(M["m10"] / M["m00"])
+                    hy = z_y0 + int(M["m01"] / M["m00"])
 
-                hand_norm = (hx / w, hy / h)
-                detail = f"Saludo detectado ({name})"
+                    # Validar estrictamente que el centro de la mano esté por encima del hombro
+                    if hy < (shoulder_y - vertical_margin_px):
+                        salute_detected = True
+                        salute_conf = min(1.0, max(0.7, area / float(face_area_px * 0.35)))
+                        hand_norm = (hx / w, hy / h)
+                        detail = f"Saludo detectado ({name})"
 
-                # Capa visual de la mano
-                hand_pt = LandmarkPoint(x=hand_norm[0], y=hand_norm[1])
-                hand_layer = LandmarkLayer(name=name, points=(hand_pt,), connections=())
-                pose_layers.append(hand_layer)
+                        # Capa visual de la mano
+                        hand_pt = LandmarkPoint(x=hand_norm[0], y=hand_norm[1])
+                        hand_layer = LandmarkLayer(name=name, points=(hand_pt,), connections=())
+                        pose_layers.append(hand_layer)
 
-                # Capa de vector hombro -> mano
-                shoulder_pt = LandmarkPoint(x=shoulder_norm[0], y=shoulder_norm[1])
-                pose_layer = LandmarkLayer(
-                    name="pose",
-                    points=(shoulder_pt, hand_pt),
-                    connections=((0, 1),),
-                )
-                pose_layers.append(pose_layer)
-                break
+                        # Capa de vector hombro -> mano
+                        shoulder_pt = LandmarkPoint(x=shoulder_norm[0], y=shoulder_norm[1])
+                        pose_layer = LandmarkLayer(
+                            name="pose",
+                            points=(shoulder_pt, hand_pt),
+                            connections=((0, 1),),
+                        )
+                        pose_layers.append(pose_layer)
+                        break
 
         # Empaquetar mapa de landmarks
         pose_l = next((l for l in pose_layers if l.name == "pose"), None)
