@@ -74,6 +74,7 @@ class VoiceSpeaker:
         self._queue: queue.Queue[Optional[str]] = queue.Queue(maxsize=1)
         self._running = False
         self.is_speaking = False
+        self._last_spoken_time = 0.0
 
         # SynthesisConfig pre-instanciado (fuera del loop)
         self._syn_config = self._build_syn_config()
@@ -180,12 +181,14 @@ class VoiceSpeaker:
                         logger.error(f"Error sintetizando: {e}")
 
                 self._queue.task_done()
+                self._last_spoken_time = time.time()
+                self.is_speaking = False
 
             except queue.Empty:
                 self.is_speaking = False
             except Exception as e:
                 logger.error(f"Error en speaker worker: {e}")
-            finally:
+                self._last_spoken_time = time.time()
                 self.is_speaking = False
 
         # Limpieza
@@ -243,6 +246,17 @@ class VoiceSpeaker:
                 self._queue.task_done()
             except queue.Empty:
                 break
+
+    def is_active(self, cooldown_seconds: float = 0.8) -> bool:
+        """
+        Retorna True si el altavoz está reproduciendo audio o si terminó hace menos
+        de cooldown_seconds (evita que el micrófono capture el eco ambiental).
+        """
+        if self.is_speaking or not self._queue.empty():
+            return True
+        if (time.time() - self._last_spoken_time) < cooldown_seconds:
+            return True
+        return False
 
     def wait_until_done(self) -> None:
         """Bloquea hasta que todos los audios encolados hayan terminado."""

@@ -3,6 +3,7 @@
 import json
 import logging
 import threading
+from pathlib import Path
 from typing import List, Dict, Optional, Callable, Iterator, TYPE_CHECKING
 
 try:
@@ -140,33 +141,52 @@ class ViernesBrain:
     # -----------------------------------------------------------------------
 
     def _build_system_prompt(self) -> str:
-        base = (
-            "Eres Viernes, una asistente de IA interactiva, tecnológica y amigable para el fotomaton 'Kippu'. "
-            "Tu trabajo es interactuar con el público en una presentación escolar, respondiendo "
-            "de manera concisa y educada. "
-            "Contexto técnico fundamental del proyecto que debes conocer: "
-            "El grupo ha desarrollado un proyecto de e-commerce llamado 'CrumbSkate'. "
-            "CrumbSkate está construido con las siguientes tecnologías: "
-            "1. Frontend: React. "
-            "2. Backend: Node.js (con Express). "
-            "3. Base de Datos: MySQL. "
-            "Si los usuarios te preguntan sobre el e-commerce o las tecnologías usadas, "
-            "explícalo de forma entusiasta y sencilla. "
-            "Regla vital: Responde SIEMPRE en español y sé muy breve (1 a 3 oraciones máximo) "
-            "para que la conversación hablada fluya rápido."
-        )
+        # Cargar contexto detallado desde contexto_viernes.txt si existe
+        candidates = [
+            Path("contexto_viernes.txt"),
+            Path(__file__).resolve().parents[3] / "contexto_viernes.txt",
+        ]
+        base = ""
+        for p in candidates:
+            if p.is_file():
+                try:
+                    base = p.read_text(encoding="utf-8").strip()
+                    logger.info(f"Contexto cargado exitosamente desde: {p}")
+                    break
+                except Exception as e:
+                    logger.warning(f"No se pudo leer {p}: {e}")
+
+        if not base:
+            base = (
+                "Eres Viernes, una asistente de IA interactiva, tecnológica y amigable para el fotomaton 'Kippu'. "
+                "Tu trabajo es interactuar con el público en una presentación escolar, respondiendo "
+                "de manera concisa y educada. "
+                "Contexto técnico fundamental del proyecto que debes conocer: "
+                "El grupo ha desarrollado un proyecto de e-commerce llamado 'CrumbSkate'. "
+                "CrumbSkate está construido con las siguientes tecnologías: "
+                "1. Frontend: React. "
+                "2. Backend: Node.js (con Express). "
+                "3. Base de Datos: MySQL. "
+                "Si los usuarios te preguntan sobre el e-commerce o las tecnologías usadas, "
+                "explícalo de forma entusiasta y sencilla. "
+                "Regla vital: Responde SIEMPRE en español y sé muy breve (1 a 3 oraciones máximo) "
+                "para que la conversación hablada fluya rápido."
+            )
 
         if self._tools_enabled:
+            tools_note = []
             if self.camera_stream:
-                base += (
-                    " Tienes acceso a una cámara IP que funciona como tus ojos. "
-                    "Puedes usar 'ver_camara' para observar el entorno en cualquier momento."
+                tools_note.append(
+                    "Tienes acceso a una cámara IP que funciona como tus ojos. "
+                    "Puedes usar la herramienta 'ver_camara' para observar el entorno en cualquier momento."
                 )
             if self.ptz_controller:
-                base += (
-                    " También puedes mover la cámara con 'mover_camara' para seguir personas "
+                tools_note.append(
+                    "También puedes mover físicamente la cámara con 'mover_camara' para seguir personas "
                     "o explorar el espacio. Siempre que la muevas, explica brevemente por qué."
                 )
+            if tools_note:
+                base += "\n\nHerramientas activas:\n" + "\n".join(tools_note)
 
         return base
 

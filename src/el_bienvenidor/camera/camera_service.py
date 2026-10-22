@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import sys
+import threading
+import time
 from time import monotonic
 from typing import Any, Protocol
 
@@ -56,12 +58,19 @@ def configure_focus(capture: Any, settings: CameraSettings) -> FocusResult:
 
 
 class OpenCVCameraService:
-    """Mantiene un único handle de VideoCapture y no conserva historial de frames."""
+    """
+    Captura de cámara con hilo dedicado en segundo plano.
+    Evita la acumulación de frames en el buffer del driver (latencia cero).
+    """
 
     def __init__(self, settings: CameraSettings) -> None:
         self._settings = settings
         self._capture: Any | None = None
         self._frame_id = 0
+        self._latest_image: Any | None = None
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: threading.Thread | None = None
 
     def _backend_candidates(self, cv2: Any) -> tuple[tuple[str, int | None], ...]:
         """Devuelve backends apropiados para la plataforma, con fallback seguro."""
@@ -87,6 +96,23 @@ class OpenCVCameraService:
         candidates.append(("default", None))
         return tuple(candidates)
 
+    def _capture_worker(self) -> None:
+        """Hilo en segundo plano que vacía constantemente el buffer de la webcam."""
+        while self._running:
+            cap = self._capture
+            if cap is None or not cap.isOpened():
+                time.sleep(0.01)
+                continue
+            try:
+                success, image = cap.read()
+                if success and image is not None and getattr(image, "size", 0) > 0:
+                    with self._lock:
+                        self._latest_image = image
+                else:
+                    time.sleep(0.005)
+            except Exception:
+                time.sleep(0.01)
+
     def open(self) -> CameraProbe:
         self.release()
         cv2 = _load_cv2()
@@ -101,11 +127,28 @@ class OpenCVCameraService:
             candidate.release()
         if capture is None:
             raise CameraUnavailableError(f"No se pudo abrir la cámara con índice {self._settings.index}.")
+
+        # Tamaño de buffer mínimo para eliminar retraso
+        capture.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         capture.set(cv2.CAP_PROP_FRAME_WIDTH, self._settings.width)
         capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self._settings.height)
         capture.set(cv2.CAP_PROP_FPS, self._settings.fps)
         focus_result = configure_focus(capture, self._settings)
         self._capture = capture
+
+        # Leer un primer frame para inicializar _latest_image
+        success, first_image = capture.read()
+        if success and first_image is not None:
+            with self._lock:
+                self._latest_image = first_image
+
+        # Iniciar hilo de lectura continua
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._capture_worker, daemon=True, name="webcam-capture-thread"
+        )
+        self._thread.start()
+
         width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = float(capture.get(cv2.CAP_PROP_FPS))
@@ -119,24 +162,28 @@ class OpenCVCameraService:
         )
 
     def read(self) -> FramePacket | None:
-        if self._capture is None or not self._capture.isOpened():
+        if self._capture is None or not self._capture.isOpened() or not self._running:
             return None
-        try:
-            success, image = self._capture.read()
-        except Exception:
-            return None
-        if not success or image is None or getattr(image, "size", 0) == 0:
+        with self._lock:
+            image = self._latest_image
+        if image is None or getattr(image, "size", 0) == 0:
             return None
         self._frame_id += 1
         height, width = image.shape[:2]
         return FramePacket(FrameId(self._frame_id), monotonic(), image, (int(width), int(height)))
 
     def is_open(self) -> bool:
-        return self._capture is not None and bool(self._capture.isOpened())
+        return self._capture is not None and bool(self._capture.isOpened()) and self._running
 
     def release(self) -> None:
+        self._running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.0)
+        self._thread = None
         if self._capture is not None:
             try:
                 self._capture.release()
             finally:
                 self._capture = None
+        with self._lock:
+            self._latest_image = None

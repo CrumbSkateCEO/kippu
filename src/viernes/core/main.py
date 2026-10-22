@@ -10,7 +10,7 @@ from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 from viernes.ipcam.camera_stream import IPCameraStream
 from viernes.ipcam.ptz_controller import PTZController
 from viernes.dashboard.tv_view import ViernesDashboard
-from viernes.voice.listener import VoiceListener
+from viernes.voice.listener import VoiceListener, find_microphone_index
 from viernes.llm.brain import ViernesBrain
 from viernes.voice.speaker import VoiceSpeaker
 
@@ -114,7 +114,10 @@ class ViernesController(QObject):
             logger.info("[PTZ] Sin host configurado. PTZ desactivado.")
 
         # --- Dashboard ---
-        self.dashboard = ViernesDashboard(self.camera)
+        self.dashboard = ViernesDashboard(
+            self.camera,
+            on_text_submitted=self._on_text_submitted_callback,
+        )
 
         # --- LLM con visión y PTZ ---
         model_name = llm_cfg.get("model", "llava")
@@ -126,9 +129,15 @@ class ViernesController(QObject):
         )
 
         # --- Voz ---
-        self.listener = VoiceListener(on_speech_detected=self._on_speech_detected_callback)
+        voice_cfg = cfg.get("voice", {})
+        mic_name = voice_cfg.get("microphone_name", "")
+        whisper_model = voice_cfg.get("whisper_model", "small")
+        energy_threshold = voice_cfg.get("energy_threshold", 0)
+        pause_threshold = voice_cfg.get("pause_threshold", 0.8)
+        mic_index = find_microphone_index(mic_name) if mic_name else None
+        initial_prompt = voice_cfg.get("initial_prompt", "")
+
         # VoiceSpeaker puede fallar si piper-tts o PyAudio no están instalados.
-        # En ese caso Viernes funciona sin voz (solo texto en pantalla).
         try:
             self.speaker: VoiceSpeaker | None = VoiceSpeaker()
         except Exception as exc:
@@ -138,6 +147,22 @@ class ViernesController(QObject):
                 exc,
             )
             self.speaker = None
+
+        listener_kwargs: dict = dict(
+            on_speech_detected=self._on_speech_detected_callback,
+            model_size=whisper_model,
+            energy_threshold=energy_threshold,
+            pause_threshold=pause_threshold,
+            device_index=mic_index,
+            mute_check=self._is_voice_muted,
+        )
+        if initial_prompt:
+            listener_kwargs["initial_prompt"] = initial_prompt
+
+        self.listener = VoiceListener(**listener_kwargs)
+
+        # Conectar toggle de micrófono del dashboard al listener
+        self.dashboard.set_mic_callback(self._on_mic_toggled)
 
         # --- Estado de inferencia ---
         self._inference_lock = threading.Lock()  # Solo una inferencia a la vez
@@ -176,6 +201,24 @@ class ViernesController(QObject):
     # -----------------------------------------------------------------------
     # Callbacks (desde hilos externos → emiten señales al hilo Qt)
     # -----------------------------------------------------------------------
+
+    def _is_voice_muted(self) -> bool:
+        """Retorna True si el altavoz está activo para evitar eco acústico en el micrófono."""
+        return bool(self.speaker and self.speaker.is_active())
+
+    def _on_text_submitted_callback(self, text: str) -> None:
+        """El usuario escribió en el chat. Mismo flujo que voz."""
+        logger.info(f"[CHAT] '{text}'")
+        self.signal_user_spoke.emit(text)
+
+    def _on_mic_toggled(self, enabled: bool) -> None:
+        """Pausa o reanuda el listener según el botón del dashboard."""
+        if enabled:
+            self.listener.start()
+            logger.info("[MIC] Micrófono activado desde el dashboard.")
+        else:
+            self.listener.stop()
+            logger.info("[MIC] Micrófono desactivado desde el dashboard.")
 
     def _on_speech_detected_callback(self, text: str) -> None:
         logger.info(f"[STT] '{text}'")

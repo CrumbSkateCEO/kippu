@@ -13,10 +13,6 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-# FPS máximo del hilo de captura — limita uso de CPU sin afectar latencia
-_CAPTURE_FPS = 30
-_CAPTURE_INTERVAL = 1.0 / _CAPTURE_FPS
-
 
 def _apply_ffmpeg_options(options_str: str) -> None:
     """
@@ -76,6 +72,7 @@ class IPCameraStream:
         self.drop_frames = drop_frames
 
         self.current_frame: Optional[np.ndarray] = None  # BGR
+        self._current_frame_rgb: Optional[np.ndarray] = None  # RGB (pre-convertido en el hilo de captura)
         self._cap: Optional[cv2.VideoCapture] = None
 
         self._running = False
@@ -109,6 +106,7 @@ class IPCameraStream:
             self._thread.join(timeout=3.0)
         with self._lock:
             self.current_frame = None
+            self._current_frame_rgb = None
 
     # ------------------------------------------------------------------
     # Conexión
@@ -210,35 +208,36 @@ class IPCameraStream:
 
     def _update_loop(self) -> None:
         """
-        Bucle interno. Lee frames a ~30 FPS sin quemar CPU.
-        Si ``drop_frames`` está activo, descarta frames intermedios para
-        mantener siempre el más reciente (evita lag acumulado).
+        Bucle interno. Lee frames tan rápido como el stream los entregue.
+        Con RTSP/FFmpeg, read() bloquea hasta que llega el próximo frame de la red,
+        por lo que no necesita throttle adicional — agregar sleep solo acumula lag.
+        Si ``drop_frames`` está activo, lee frames extra para llegar al más reciente.
         """
         connected = self._connect()
 
         while self._running:
-            t0 = time.monotonic()
-
             if not connected or self._cap is None or not self._cap.isOpened():
                 connected = self._connect()
                 continue
 
             try:
-                if self.drop_frames:
-                    # Vaciar el buffer interno leyendo hasta el frame más nuevo
-                    ret, frame = False, None
-                    for _ in range(5):
-                        r, f = self._cap.read()
-                        if r:
-                            ret, frame = r, f
-                        else:
-                            break
-                else:
-                    ret, frame = self._cap.read()
+                ret, frame = self._cap.read()
 
                 if ret and frame is not None:
+                    if self.drop_frames:
+                        # Vaciar el buffer interno leyendo frames adicionales sin guardarlos
+                        # Esto descarta frames acumulados manteniendo el más reciente
+                        for _ in range(3):
+                            r, f = self._cap.read()
+                            if r and f is not None:
+                                frame = f
+                            else:
+                                break
+                    # Convertir a RGB en el hilo de captura para no bloquear Qt
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     with self._lock:
                         self.current_frame = frame
+                        self._current_frame_rgb = frame_rgb
                 else:
                     logger.error("Error leyendo frame — posible desconexión.")
                     connected = False
@@ -248,12 +247,6 @@ class IPCameraStream:
                 logger.error("Excepción en lectura de cámara: %s", exc)
                 connected = False
                 continue
-
-            # Throttle: dormir el tiempo sobrante para alcanzar ~30 FPS
-            elapsed = time.monotonic() - t0
-            sleep_time = _CAPTURE_INTERVAL - elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
 
         if self._cap is not None:
             self._cap.release()
@@ -272,10 +265,13 @@ class IPCameraStream:
             return None
 
     def get_latest_frame_rgb(self) -> Optional[np.ndarray]:
-        """Retorna el último frame en RGB (evita conversión extra en el caller)."""
+        """
+        Retorna el último frame en RGB pre-convertido en el hilo de captura.
+        No hace conversión en el hilo de Qt → sin lag en la UI.
+        """
         with self._lock:
-            if self.current_frame is not None:
-                return cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2RGB)
+            if self._current_frame_rgb is not None:
+                return self._current_frame_rgb.copy()
             return None
 
 

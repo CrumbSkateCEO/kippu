@@ -99,6 +99,11 @@ cleanup() {
     [[ -n "$KIPPU_PID" ]]   && kill -0 "$KIPPU_PID"   2>/dev/null && kill -SIGKILL "$KIPPU_PID"   2>/dev/null || true
     [[ -n "$VIERNES_PID" ]] && kill -0 "$VIERNES_PID" 2>/dev/null && kill -SIGKILL "$VIERNES_PID" 2>/dev/null || true
 
+    # Liberar memoria RAM/VRAM descargando los modelos activos en Ollama
+    if command -v ollama &>/dev/null; then
+        ollama ps | awk 'NR>1 {print $1}' | xargs -r ollama stop 2>/dev/null || true
+    fi
+
     info "Apagado completo."
     exit 0
 }

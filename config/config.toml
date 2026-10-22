@@ -1,9 +1,9 @@
 [camera]
-index = 0
+index = 1
 # "auto" usa V4L2/GStreamer en Linux, DirectShow/MSMF en Windows y el fallback de OpenCV.
 backend = "auto"
-width = 1280
-height = 720
+width = 640
+height = 480
 fps = 30
 autofocus = true
 # Para foco manual, usar autofocus = false y descomentar un valor admitido por la cámara.
@@ -90,4 +90,34 @@ password = "nc6dd3"
 #   moondream    — 1.8B, ultraligero (calidad reducida)
 #   bakllava     — 7B, basado en Mistral
 # Para solo texto (sin visión): llama3.1, phi3, mistral
-model = "llama 3.1"
+model = "qwen2.5:3b"
+
+# ---------------------------------------------------------------------------
+# Voz (STT / micrófono)
+# ---------------------------------------------------------------------------
+[voice]
+# Nombre (o fragmento) del dispositivo de micrófono a usar.
+# Dejar vacío ("") para usar el micrófono por defecto del sistema.
+# Ejemplos:
+#   "audiorelay"  → celular vía Audio Relay (LAN)
+#   "ALC887"      → micrófono analógico de la placa madre
+#   ""            → default del sistema
+microphone_name = "audiorelay"
+
+# Tamaño del modelo Whisper para STT: "tiny" (rápido) | "base" | "small"
+whisper_model = "small"
+
+# Sensibilidad del micrófono:
+# 0 = Calibración automática según tu micrófono (recomendado).
+# O especificar un valor fijo (ej: 120 para celular/mic sensible, 300 para mic duro).
+energy_threshold = 0
+
+# Segundos de silencio necesarios para considerar que terminaste de hablar:
+pause_threshold = 0.8
+
+# Prompt de sesgo léxico para Whisper. Ayuda a reconocer palabras del dominio.
+# Incluir palabras clave, comandos y nombres propios que Whisper suele confundir.
+# Dejar vacío ("") para usar el prompt por defecto del código.
+# Ejemplo: "Viernes, CrumbSkate, Kippu. Comandos: foto, zoom, mover, izquierda."
+initial_prompt = ""
+

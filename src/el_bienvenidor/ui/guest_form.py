@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-import tkinter as tk
-from tkinter import ttk
 
 from el_bienvenidor.config import UiSettings
 
@@ -55,6 +53,8 @@ def _prompt_guest_card_tk(
     headline: str,
     initial: GuestIntake | None,
 ) -> GuestIntake:
+    import tkinter as tk  # lazy import – may be missing on headless systems
+    from tkinter import ttk  # noqa: F401
     result: dict[str, GuestIntake | None] = {"value": None}
 
     root = tk.Tk()
@@ -269,7 +269,9 @@ def prompt_guest_card(
         return fallback
     try:
         return _prompt_guest_card_tk(settings, headline=headline, initial=initial)
-    except tk.TclError:
+    except (ImportError, Exception) as exc:  # tkinter missing or TclError
+        import logging
+        logging.getLogger(__name__).warning("Tkinter no disponible (%s); usando fallback de consola.", exc)
         return prompt_guest_card_console(headline)
 
 

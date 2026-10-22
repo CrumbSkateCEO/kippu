@@ -26,7 +26,9 @@ from PyQt6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
+    QPushButton,
     QSizePolicy,
     QStackedLayout,
     QVBoxLayout,
@@ -375,11 +377,14 @@ class ViernesDashboard(QMainWindow):
     """
     Dashboard de Viernes: sala de control cinematográfica.
     Conserva set_state / update_subtitle / update_frame para el orquestador.
+    Incluye chat de texto y toggle de micrófono en el panel inferior.
     """
 
-    def __init__(self, camera_stream):
+    def __init__(self, camera_stream, on_text_submitted=None):
         super().__init__()
         self.camera_stream = camera_stream
+        self._on_text_submitted = on_text_submitted
+        self._mic_enabled = True
         self.setWindowTitle("V.I.E.R.N.E.S.  ·  Control Room")
         self.setStyleSheet("background: transparent;")
 
@@ -430,13 +435,17 @@ class ViernesDashboard(QMainWindow):
         self.layout.addWidget(self.hud_frame, stretch=1)
 
         self.bottom_host = GlassPanel()
-        self.bottom_host.setFixedHeight(148)
-        bottom = QHBoxLayout(self.bottom_host)
-        bottom.setContentsMargins(22, 16, 28, 16)
-        bottom.setSpacing(18)
+        self.bottom_host.setFixedHeight(196)
+        bottom = QVBoxLayout(self.bottom_host)
+        bottom.setContentsMargins(22, 12, 28, 12)
+        bottom.setSpacing(10)
+
+        # --- Fila superior: indicador + subtítulo + barras ---
+        top_row = QHBoxLayout()
+        top_row.setSpacing(18)
 
         self.core_indicator = ArcReactorIndicator()
-        bottom.addWidget(self.core_indicator, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top_row.addWidget(self.core_indicator, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         text_col = QVBoxLayout()
         text_col.setSpacing(4)
@@ -452,11 +461,70 @@ class ViernesDashboard(QMainWindow):
 
         self.subtitle_text = QLabel("Sistemas en línea. Te escucho.")
         self.subtitle_text.setWordWrap(True)
-        self.subtitle_text.setFont(_sans(26, QFont.Weight.Medium))
+        self.subtitle_text.setFont(_sans(22, QFont.Weight.Medium))
         self.subtitle_text.setStyleSheet(f"color: {Palette.TEXT_MAIN.name()}; background: transparent;")
         text_col.addWidget(self.subtitle_text)
-        text_col.addStretch()
-        bottom.addLayout(text_col, stretch=1)
+        top_row.addLayout(text_col, stretch=1)
+        bottom.addLayout(top_row)
+
+        # --- Fila inferior: chat de texto + toggle micrófono ---
+        chat_row = QHBoxLayout()
+        chat_row.setSpacing(10)
+
+        self.mic_btn = QPushButton("🎙  MIC ON")
+        self.mic_btn.setFont(_mono(11, QFont.Weight.Bold))
+        self.mic_btn.setFixedSize(110, 36)
+        self.mic_btn.setCheckable(True)
+        self.mic_btn.setChecked(True)
+        self.mic_btn.clicked.connect(self._toggle_mic)
+        self._update_mic_style(True)
+        chat_row.addWidget(self.mic_btn)
+
+        self.chat_input = QLineEdit()
+        self.chat_input.setPlaceholderText("Escribí tu pregunta y presioná Enter...")
+        self.chat_input.setFont(_sans(16))
+        self.chat_input.setFixedHeight(36)
+        self.chat_input.setStyleSheet(
+            f"""
+            QLineEdit {{
+                background: rgba(8, 20, 38, 200);
+                color: {Palette.TEXT_MAIN.name()};
+                border: 1px solid rgba(64, 224, 255, 90);
+                border-radius: 6px;
+                padding: 0 12px;
+                selection-background-color: rgba(64, 224, 255, 60);
+            }}
+            QLineEdit:focus {{
+                border: 1px solid {Palette.HUD_CYAN.name()};
+                background: rgba(10, 26, 50, 220);
+            }}
+            """
+        )
+        self.chat_input.returnPressed.connect(self._submit_chat)
+        chat_row.addWidget(self.chat_input, stretch=1)
+
+        self.send_btn = QPushButton("ENVIAR  ▶")
+        self.send_btn.setFont(_mono(11, QFont.Weight.Bold))
+        self.send_btn.setFixedSize(110, 36)
+        self.send_btn.clicked.connect(self._submit_chat)
+        self.send_btn.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: rgba(64, 224, 255, 22);
+                color: {Palette.HUD_CYAN.name()};
+                border: 1px solid rgba(64, 224, 255, 120);
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{
+                background: rgba(64, 224, 255, 45);
+                border: 1px solid {Palette.HUD_CYAN.name()};
+            }}
+            QPushButton:pressed {{ background: rgba(64, 224, 255, 70); }}
+            """
+        )
+        chat_row.addWidget(self.send_btn)
+
+        bottom.addLayout(chat_row)
         self.layout.addWidget(self.bottom_host)
 
         self.timer = QTimer(self)
@@ -481,6 +549,55 @@ class ViernesDashboard(QMainWindow):
             }}
             """
         )
+
+    def _update_mic_style(self, enabled: bool) -> None:
+        if enabled:
+            self.mic_btn.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background: rgba(72, 255, 186, 28);
+                    color: {Palette.HUD_GREEN.name()};
+                    border: 1px solid rgba(72, 255, 186, 140);
+                    border-radius: 6px;
+                }}
+                QPushButton:hover {{ background: rgba(72, 255, 186, 55); }}
+                """
+            )
+        else:
+            self.mic_btn.setStyleSheet(
+                f"""
+                QPushButton {{
+                    background: rgba(255, 86, 110, 22);
+                    color: {Palette.HUD_RED.name()};
+                    border: 1px solid rgba(255, 86, 110, 120);
+                    border-radius: 6px;
+                }}
+                QPushButton:hover {{ background: rgba(255, 86, 110, 45); }}
+                """
+            )
+
+    def _toggle_mic(self, checked: bool) -> None:
+        self._mic_enabled = checked
+        self.mic_btn.setText("🎙  MIC ON" if checked else "🚫  MIC OFF")
+        self._update_mic_style(checked)
+        # Notificar al orquestador si registró un callback
+        if hasattr(self, "_on_mic_toggled") and self._on_mic_toggled:
+            self._on_mic_toggled(checked)
+
+    def set_mic_callback(self, callback) -> None:
+        """Registra el callback para toggle de micrófono (lo llama el orquestador)."""
+        self._on_mic_toggled = callback
+
+    def _submit_chat(self) -> None:
+        """Envía el texto del chat al orquestador."""
+        text = self.chat_input.text().strip()
+        if not text:
+            return
+        self.chat_input.clear()
+        logger.info(f"[CHAT] Texto enviado: '{text}'")
+        self.update_subtitle(f"Usuario: {text}")
+        if self._on_text_submitted:
+            self._on_text_submitted(text)
 
     def _tick_clock(self):
         now = _dt.datetime.now()
