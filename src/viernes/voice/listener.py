@@ -83,7 +83,7 @@ def _set_default_pipewire_source(source_name: str) -> bool:
     return False
 
 
-def _safe_get_audio_devices() -> List[tuple[int, str]]:
+def _safe_get_audio_devices() -> list[tuple[int, str]]:
     """
     Obtiene la lista de dispositivos de entrada (micrófonos) de forma segura.
     Evita llamar a sr.Microphone.list_microphone_names() que causa SIGSEGV
@@ -174,7 +174,8 @@ class VoiceListener:
         initial_prompt: str = (
             "Hola Viernes. Conversación en español argentino. "
             "Comandos: foto, captura, zoom, mover, izquierda, derecha, arriba, abajo, "
-            "mostrar, buscar, qué ves, panés, CrumbSkate, Kippu, Viernes. "
+            "mostrar, buscar, abrir, cerrar, gracias Viernes eso es todo, "
+            "qué ves, panés, CrumbSkate, Kippu, Viernes. "
             "Responde en español."
         ),
     ):
@@ -363,6 +364,7 @@ class VoiceListener:
 
         logger.info("Deteniendo escucha del micrófono...")
         self._stop_listening_func(wait_for_stop=False)
+        self._stop_listening_func = None
         self._is_listening = False
 
 

@@ -648,6 +648,9 @@ class ViernesDashboard(QMainWindow):
 
         if frame_rgb is not None:
             h, w, ch = frame_rgb.shape
+            # .copy() es necesario porque camera_stream retorna referencia directa
+            # y el hilo de captura puede reciclar el buffer antes de que Qt renderice
+            frame_rgb = frame_rgb.copy()
             bytes_per_line = ch * w
             q_img = QImage(frame_rgb.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
             pixmap = QPixmap.fromImage(q_img).scaled(

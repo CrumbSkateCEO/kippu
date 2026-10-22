@@ -7,6 +7,8 @@ import time
 import os
 import contextlib
 import urllib.request
+import json
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +20,91 @@ except ImportError:
     pyaudio = None
 
 logger = logging.getLogger(__name__)
+
+
+def cargar_diccionario_fonetico() -> dict[str, str]:
+    """Carga dinámicamente el diccionario fonético JSON desde la misma carpeta que este archivo.
+    Si el archivo no existe o falla la lectura, devuelve un diccionario vacío sin crashear.
+    """
+    ruta_json = Path(__file__).resolve().parent / "diccionario_fonetico.json"
+    if not ruta_json.is_file():
+        ruta_alt = Path(__file__).parent / "diccionario_fonetico.json"
+        if ruta_alt.is_file():
+            ruta_json = ruta_alt
+        else:
+            return {}
+    try:
+        with open(ruta_json, "r", encoding="utf-8") as f:
+            datos = json.load(f)
+            return datos if isinstance(datos, dict) else {}
+    except Exception as e:
+        logger.warning(f"No se pudo cargar el diccionario fonético ({ruta_json}): {e}")
+        return {}
+
+
+def limpiar_texto_para_tts(texto: str) -> str:
+    """Limpia y optimiza el texto para síntesis TTS antes de pasarlo al motor de voz.
+
+    Pasos en orden:
+    1. Carga el JSON fonético (rutas absolutas).
+    2. Aplica Pasada A del diccionario: términos con puntos o guiones, ANTES de que
+       la limpieza de prosodia destruya esos caracteres (ej. F.R.I.D.A.Y., Node.js).
+    3. Limpieza de Markdown: Elimina *, _, #, comillas y ~.
+    4. Optimiza Prosodia (Puntuación):
+       - Saltos de línea → espacio.
+       - Puntos suspensivos (…/...) → coma.
+       - Puntos normales intermedios → coma (sin tocar números decimales).
+    5. Aplica Pasada B del diccionario: el resto de los términos (sin puntos/guiones).
+    """
+    if not texto or not isinstance(texto, str):
+        return ""
+
+    # 1. Cargar el JSON dinámicamente
+    diccionario = cargar_diccionario_fonetico()
+
+    # Separar entradas con puntos/guiones (Pasada A, pre-prosodia) del resto (Pasada B)
+    if isinstance(diccionario, dict):
+        diccionario = {k: v for k, v in diccionario.items() if not k.startswith("_")}
+        terminos_con_simbolo = {k: v for k, v in diccionario.items() if "." in k or "-" in k}
+        terminos_normales    = {k: v for k, v in diccionario.items() if "." not in k and "-" not in k}
+    else:
+        terminos_con_simbolo = {}
+        terminos_normales    = {}
+
+    def _aplicar_diccionario(txt: str, entradas: dict) -> str:
+        for termino, pronunciacion in sorted(entradas.items(), key=lambda i: len(i[0]), reverse=True):
+            if not termino:
+                continue
+            # Para términos con puntos o guiones, usamos coincidencia literal sin \b
+            # porque los puntos/guiones no son word boundaries en regex
+            if "." in termino or "-" in termino:
+                txt = re.sub(re.escape(termino), pronunciacion, txt, flags=re.IGNORECASE)
+            else:
+                patron = rf"\b{re.escape(termino)}\b"
+                txt = re.sub(patron, pronunciacion, txt, flags=re.IGNORECASE)
+        return txt
+
+    # 2. Pasada A: términos con puntos o guiones (antes de prosodia)
+    texto = _aplicar_diccionario(texto, terminos_con_simbolo)
+
+    # 3. Limpiar Markdown (* _ # " ' ~ ` “”‘’)
+    texto = re.sub(r"[*_#\"~`\x27“”‘’]", "", texto)
+
+    # 4. Optimizar Prosodia (Puntuación)
+    # 4.1. Saltos de línea → espacio
+    texto = re.sub(r"[\r\n]+", " ", texto)
+
+    # 4.2. Puntos suspensivos → coma
+    texto = re.sub(r"\.{3,}|…", ",", texto)
+
+    # 4.3. Puntos normales intermedios → coma (proteger números decimales)
+    texto = re.sub(r"\.(?=\s*\S)(?!\d)", ",", texto)
+
+    # 5. Pasada B: términos sin puntos/guiones
+    texto = _aplicar_diccionario(texto, terminos_normales)
+
+    return texto.strip()
+
 
 
 @contextlib.contextmanager
@@ -52,10 +139,16 @@ class VoiceSpeaker:
     - Importaciones críticas fuera del loop de síntesis.
     """
 
-    def __init__(self, models_dir: Optional[Path] = None, model_name: str = "es_AR-daniela-high"):
+    def __init__(
+        self,
+        models_dir: Optional[Path] = None,
+        model_name: str = "es_AR-daniela-high",
+        length_scale: float = 1.18,
+    ):
         """
-        :param models_dir:  Directorio donde se guardan los modelos Piper.
-        :param model_name:  Nombre del modelo de voz.
+        :param models_dir:   Directorio donde se guardan los modelos Piper.
+        :param model_name:   Nombre del modelo de voz.
+        :param length_scale: Escala de duración de fonemas (>1.0 más pausado y explicativo, <1.0 más rápido).
         """
         if PiperVoice is None or pyaudio is None:
             logger.error("Faltan dependencias. Ejecuta: uv pip install piper-tts PyAudio")
@@ -67,34 +160,47 @@ class VoiceSpeaker:
         models_dir.mkdir(parents=True, exist_ok=True)
 
         self.model_name = model_name
+        self.length_scale = length_scale
         self.onnx_path = models_dir / f"{self.model_name}.onnx"
         self.json_path = models_dir / f"{self.model_name}.onnx.json"
 
-        # maxsize=1: descarta mensajes viejos si llega uno nuevo mientras habla
-        self._queue: queue.Queue[Optional[str]] = queue.Queue(maxsize=1)
+        # Cola de oraciones pendientes para TTS.
+        # Un maxsize generoso permite que el LLM envíe varias oraciones sin
+        # descartar las intermedias; interrupt() vacía la cola al detectar
+        # nueva intervención del usuario.
+        self._queue: queue.Queue[Optional[str]] = queue.Queue(maxsize=30)
         self._running = False
         self.is_speaking = False
         self._last_spoken_time = 0.0
+        self._interrupted = threading.Event()  # Flag para cortar síntesis mid-chunk
 
         # SynthesisConfig pre-instanciado (fuera del loop)
-        self._syn_config = self._build_syn_config()
+        self._syn_config = self._build_syn_config(length_scale=self.length_scale)
 
         self._start_thread()
-        logger.info(f"VoiceSpeaker ({self.model_name}) iniciado.")
+        logger.info(f"VoiceSpeaker ({self.model_name}, length_scale={self.length_scale}) iniciado.")
 
     # -----------------------------------------------------------------------
     # Config de síntesis (creada una sola vez)
     # -----------------------------------------------------------------------
 
     @staticmethod
-    def _build_syn_config():
+    def _build_syn_config(length_scale: float = 1.18):
         """Crea la configuración de síntesis. Devuelve None si no está disponible."""
         try:
             from piper.config import SynthesisConfig
-            # length_scale < 1.0 → más rápido | noise_scale 0.667 → más natural
-            return SynthesisConfig(length_scale=0.9, noise_scale=0.667, noise_w_scale=0.8)
+            # length_scale > 1.0 → habla más pausada, articulada y didáctica
+            # noise_scale 0.667 → más natural | noise_w_scale 0.8 → fonemas estables
+            return SynthesisConfig(length_scale=length_scale, noise_scale=0.667, noise_w_scale=0.8)
         except ImportError:
             return None
+
+    def set_speed(self, length_scale: float) -> None:
+        """Ajusta la velocidad de habla dinámicamente (>1.0 más pausado/explicativo, <1.0 más rápido)."""
+        self.length_scale = length_scale
+        self._syn_config = self._build_syn_config(length_scale=length_scale)
+        logger.info(f"Velocidad de habla actualizada a length_scale={length_scale}")
+
 
     # -----------------------------------------------------------------------
     # Descarga del modelo
@@ -168,13 +274,19 @@ class VoiceSpeaker:
                 if text is None:
                     break  # Señal de apagado
 
+                if not text.strip():
+                    self._queue.task_done()
+                    continue
+
+                self._interrupted.clear()
                 self.is_speaking = True
                 logger.info(f"TTS sintetizando: '{text[:60]}{'...' if len(text)>60 else ''}'")
 
                 if stream is not None:
                     try:
                         for chunk in voice.synthesize(text, syn_config=self._syn_config):
-                            if not self._running:
+                            if not self._running or self._interrupted.is_set():
+                                logger.info("[TTS] Síntesis interrumpida mid-chunk.")
                                 break
                             stream.write(chunk.audio_int16_bytes)
                     except Exception as e:
@@ -222,7 +334,9 @@ class VoiceSpeaker:
         """
         if not text or not text.strip():
             return
-        text = text.strip()
+        text = limpiar_texto_para_tts(text)
+        if not text:
+            return
         try:
             # put_nowait: si la cola está llena lanza Full en lugar de bloquear
             self._queue.put_nowait(text)
@@ -239,7 +353,8 @@ class VoiceSpeaker:
                 pass
 
     def interrupt(self) -> None:
-        """Vacía la cola de audio pendiente (interrumpe lo que está por decir)."""
+        """Interrumpe la síntesis en curso (mid-chunk) y vacía la cola de audio pendiente."""
+        self._interrupted.set()  # Corta el chunk que se está reproduciendo
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()

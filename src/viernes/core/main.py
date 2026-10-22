@@ -3,16 +3,24 @@
 import sys
 import logging
 import threading
+import time
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
 
 from viernes.ipcam.camera_stream import IPCameraStream
 from viernes.ipcam.ptz_controller import PTZController
-from viernes.dashboard.tv_view import ViernesDashboard
+from viernes.dashboard.tv_view import ViernesDashboard, ViernesState
 from viernes.voice.listener import VoiceListener, find_microphone_index
+from viernes.voice.conversation import (
+    es_cierre_conversacion,
+    es_despertar,
+    texto_despues_de_despertar,
+)
 from viernes.llm.brain import ViernesBrain
 from viernes.voice.speaker import VoiceSpeaker
+from viernes.ipcam.motion_tracker import MotionTracker
+from viernes.system.computer_control import OS_RESUMEN
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +38,7 @@ def _load_config() -> dict:
 
     candidates = [
         Path("config/config.toml"),
-        Path(__file__).resolve().parents[4] / "config" / "config.toml",
+        Path(__file__).resolve().parents[3] / "config" / "config.toml",
     ]
     for path in candidates:
         if path.exists():
@@ -119,12 +127,19 @@ class ViernesController(QObject):
             on_text_submitted=self._on_text_submitted_callback,
         )
 
-        # --- LLM con visión y PTZ ---
+        # --- Motion Tracker (requiere cámara + PTZ) ---
+        self.motion_tracker: MotionTracker | None = None
+        if self.camera and self.ptz:
+            self.motion_tracker = MotionTracker(self.camera, self.ptz)
+            logger.info("[TRACK] MotionTracker disponible (no activo hasta que Viernes lo active).")
+
+        # --- LLM con visión, PTZ y tracking ---
         model_name = llm_cfg.get("model", "llava")
         self.brain = ViernesBrain(
             model_name=model_name,
             camera_stream=self.camera,
             ptz_controller=self.ptz,
+            motion_tracker=self.motion_tracker,
             on_camera_action=self._on_camera_action_callback,
         )
 
@@ -166,6 +181,8 @@ class ViernesController(QObject):
 
         # --- Estado de inferencia ---
         self._inference_lock = threading.Lock()  # Solo una inferencia a la vez
+        self._standby = False
+        self._wake_from_chat = False
 
         # --- Señales ---
         self.signal_user_spoke.connect(self._slot_user_spoke)
@@ -188,11 +205,11 @@ class ViernesController(QObject):
             caps.append("visión")
         if self.ptz:
             caps.append("control de cámara")
+        caps.append("control de la computadora")
 
         saludo = (
-            f"Sistemas en línea. Tengo {' y '.join(caps)} activos. Te escucho."
-            if caps
-            else "Sistemas en línea. Te escucho."
+            f"Sistemas en línea en {OS_RESUMEN}. "
+            f"Tengo {' y '.join(caps)} activos. Te escucho."
         )
         self.dashboard.update_subtitle(f"Viernes: {saludo}")
         if self.speaker:
@@ -203,12 +220,18 @@ class ViernesController(QObject):
     # -----------------------------------------------------------------------
 
     def _is_voice_muted(self) -> bool:
-        """Retorna True si el altavoz está activo para evitar eco acústico en el micrófono."""
-        return bool(self.speaker and self.speaker.is_active())
+        """Anti-eco mínimo post-habla (solo bloquea 0.15s después de que Viernes terminó de hablar).
+        No bloquea mientras está hablando para permitir interrupciones por voz del usuario."""
+        if self.speaker is None:
+            return False
+        # Solo silenciar durante el breve rebote acústico post-silencio, nunca durante el habla
+        last = self.speaker._last_spoken_time
+        return not self.speaker.is_speaking and ((time.time() - last) < 0.15)
 
     def _on_text_submitted_callback(self, text: str) -> None:
-        """El usuario escribió en el chat. Mismo flujo que voz."""
+        """El usuario escribió en el chat. El texto escrito reactiva si estaba en standby."""
         logger.info(f"[CHAT] '{text}'")
+        self._wake_from_chat = True
         self.signal_user_spoke.emit(text)
 
     def _on_mic_toggled(self, enabled: bool) -> None:
@@ -237,7 +260,32 @@ class ViernesController(QObject):
         """
         El usuario habló. Cancela cualquier inferencia en curso, interrumpe
         el TTS y lanza la nueva inferencia en streaming.
+
+        Si Viernes está en segundo plano, ignora el audio hasta que la nombren.
+        El chat escrito siempre puede reactivar. Frases de cierre la callan.
         """
+        from_chat = self._wake_from_chat
+        self._wake_from_chat = False
+
+        if self._standby and not from_chat:
+            if not es_despertar(text):
+                logger.info("[STANDBY] Ignorado (sin vocativo): '%s'", text)
+                return
+            pedido = texto_despues_de_despertar(text)
+            self._standby = False
+            logger.info("[STANDBY] Reactivada por vocativo.")
+            if not pedido:
+                self._decir_breve("Te escucho.")
+                return
+            text = pedido
+
+        if from_chat:
+            self._standby = False
+
+        if es_cierre_conversacion(text):
+            self._entrar_standby()
+            return
+
         # Cancelar respuesta anterior si Viernes aún estaba hablando/pensando
         self.brain.cancel_current()
         if self.speaker:
@@ -250,6 +298,22 @@ class ViernesController(QObject):
             daemon=True,
             name="llm-stream",
         ).start()
+
+    def _decir_breve(self, frase: str) -> None:
+        self.dashboard.update_subtitle(f"Viernes: {frase}")
+        if self.speaker:
+            self.speaker.speak(frase)
+
+    def _entrar_standby(self) -> None:
+        """Cierra el turno: una despedida corta y silencio en segundo plano."""
+        self._standby = True
+        self.brain.cancel_current()
+        if self.speaker:
+            self.speaker.interrupt()
+        frase = "De nada. Quedo en segundo plano; si me necesitás, decime Viernes."
+        logger.info("[STANDBY] Conversación cerrada. Escucha pasiva activa.")
+        self._decir_breve(frase)
+        self.dashboard.set_state(ViernesState.IDLE)
 
     def _stream_response(self, text: str) -> None:
         """
@@ -307,6 +371,8 @@ class ViernesController(QObject):
         logger.info("[APAGADO] Deteniendo módulos...")
         self.brain.cancel_current()
         self.listener.stop()
+        if self.motion_tracker:
+            self.motion_tracker.stop()
         if self.speaker:
             self.speaker.stop()
         self.camera.stop()
