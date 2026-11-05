@@ -380,13 +380,20 @@ class ViernesDashboard(QMainWindow):
     Incluye chat de texto y toggle de micrófono en el panel inferior.
     """
 
-    def __init__(self, camera_stream, on_text_submitted=None):
+    def __init__(self, camera_stream, on_text_submitted=None, typewriter_speed_ms: int = 35):
         super().__init__()
         self.camera_stream = camera_stream
         self._on_text_submitted = on_text_submitted
+        self.typewriter_speed_ms = typewriter_speed_ms
         self._mic_enabled = True
         self.setWindowTitle("V.I.E.R.N.E.S.  ·  Control Room")
         self.setStyleSheet("background: transparent;")
+
+        # Efecto de texto progresivo (typewriter) sincronizado con el habla
+        self._typewriter_timer = QTimer(self)
+        self._typewriter_timer.timeout.connect(self._typewriter_step)
+        self._target_subtitle = ""
+        self._typewriter_index = 0
 
         self.central_widget = Atmosphere(self)
         self.setCentralWidget(self.central_widget)
@@ -617,25 +624,45 @@ class ViernesDashboard(QMainWindow):
         self.status_label.setText(labels.get(state, "STANDBY"))
         self._apply_status_style(color)
 
+    def _typewriter_step(self):
+        """Avanza un caracter en la animación de texto sincronizada con la voz."""
+        if self._typewriter_index < len(self._target_subtitle):
+            self._typewriter_index += 1
+            self.subtitle_text.setText(self._target_subtitle[:self._typewriter_index])
+        else:
+            self._typewriter_timer.stop()
+
     def update_subtitle(self, text: str):
         if text.startswith("Usuario:"):
+            self._typewriter_timer.stop()
             display_text = text[len("Usuario:"):].strip()
             self.speaker_label.setText("AUDIO INPUT DETECTED")
             self.speaker_label.setStyleSheet(f"color: {Palette.HUD_AMBER.name()}; background: transparent;")
             self.set_state(ViernesState.THINKING)
+            self._target_subtitle = display_text
+            self.subtitle_text.setText(display_text)
         elif text.startswith("Viernes:"):
             display_text = text[len("Viernes:"):].strip()
             self.speaker_label.setText("AUDIO OUTPUT")
             self.speaker_label.setStyleSheet(f"color: {Palette.HUD_GREEN.name()}; background: transparent;")
             self.set_state(ViernesState.SPEAKING)
-            QTimer.singleShot(4000, lambda: self.set_state(ViernesState.LISTENING))
+
+            if self.typewriter_speed_ms > 0:
+                self._typewriter_timer.stop()
+                self._target_subtitle = display_text
+                self._typewriter_index = 0
+                self.subtitle_text.setText("")
+                self._typewriter_timer.start(self.typewriter_speed_ms)
+            else:
+                self.subtitle_text.setText(display_text)
         else:
+            self._typewriter_timer.stop()
             display_text = text
             self.speaker_label.setText("CHANNEL OPEN")
             self.speaker_label.setStyleSheet(f"color: {Palette.HUD_CYAN.name()}; background: transparent;")
             self.set_state(ViernesState.LISTENING)
-
-        self.subtitle_text.setText(display_text)
+            self._target_subtitle = display_text
+            self.subtitle_text.setText(display_text)
 
     def update_frame(self):
         get_rgb = getattr(self.camera_stream, "get_latest_frame_rgb", None)

@@ -115,15 +115,33 @@ def _safe_get_audio_devices() -> list[tuple[int, str]]:
         return []
 
 
+def _find_safe_default_index() -> Optional[int]:
+    """
+    Busca el índice del backend 'pulse' o 'pipewire' en PyAudio.
+    Usar estos en vez de ``device_index=None`` evita que PortAudio enumere
+    dispositivos ALSA problemáticos (Loopback, HDMI sin entrada, etc.)
+    que pueden causar SIGSEGV en Linux.
+    """
+    devices = _safe_get_audio_devices()
+    for preferred in ("pulse", "pipewire", "default"):
+        for idx, name in devices:
+            if name.lower() == preferred:
+                logger.info(f"Dispositivo de entrada seguro: [{idx}] {name}")
+                return idx
+    return None
+
+
 def find_microphone_index(name_fragment: str) -> Optional[int]:
     """
     Busca el micrófono por nombre de forma segura y robusta:
-    1. Si es un dispositivo PipeWire/PulseAudio (como AudioRelay), lo configura como
-       fuente default del sistema y retorna el índice del backend 'pulse' o None (default).
-    2. Si no, busca entre los dispositivos de entrada válidos de PyAudio.
+    1. Si ``name_fragment`` está vacío, devuelve el índice del backend
+       pulse/pipewire para evitar SIGSEGV con ALSA.
+    2. Si es un dispositivo PipeWire/PulseAudio (como AudioRelay), lo configura como
+       fuente default del sistema y retorna el índice del backend 'pulse'.
+    3. Si no, busca entre los dispositivos de entrada válidos de PyAudio.
     """
     if not name_fragment:
-        return None
+        return _find_safe_default_index()
 
     needle = name_fragment.lower()
 
@@ -133,7 +151,7 @@ def find_microphone_index(name_fragment: str) -> Optional[int]:
         logger.info(f"Fuente PipeWire encontrada: '{pw_source}'")
         _set_default_pipewire_source(pw_source)
         logger.info(f"Audio configurado para capturar desde '{pw_source}' vía default del sistema.")
-        return None
+        return _find_safe_default_index()
 
     # --- Paso 2: buscar en dispositivos PyAudio físicos de entrada ---
     devices = _safe_get_audio_devices()
@@ -145,7 +163,7 @@ def find_microphone_index(name_fragment: str) -> Optional[int]:
     logger.warning(
         f"No se encontró micrófono con '{name_fragment}'. Usando dispositivo por defecto del sistema."
     )
-    return None
+    return _find_safe_default_index()
 
 
 class VoiceListener:
@@ -237,10 +255,13 @@ class VoiceListener:
                 self.recognizer.energy_threshold = float(self.configured_energy_threshold)
                 logger.info(f"Calibración: piso={ambient:.0f} | Umbral manual fijado: {self.recognizer.energy_threshold:.0f}")
             else:
-                # Umbral adaptado: 25% por encima del ruido ambiente + margen de seguridad
-                effective = max(ambient * 1.25, ambient + 30.0)
-                # Acotar entre un piso mínimo (60) y máximo sensato (500)
-                self.recognizer.energy_threshold = max(60.0, min(effective, 500.0))
+                # Umbral adaptado: 50% por encima del ruido ambiente para
+                # discriminar voz del piso acústico.  Sin tope máximo fijo:
+                # cada micrófono tiene un nivel de señal distinto (AudioRelay
+                # ≈100, mic analógico ALC887 ≈3000+).
+                effective = ambient * 1.5 + 50.0
+                # Solo un piso mínimo para evitar disparos con silencio digital.
+                self.recognizer.energy_threshold = max(60.0, effective)
                 logger.info(f"Calibración: piso={ambient:.0f} | Umbral automático fijado: {self.recognizer.energy_threshold:.0f}")
 
             self.recognizer.dynamic_energy_threshold = False
@@ -344,6 +365,9 @@ class VoiceListener:
             logger.warning("VoiceListener ya está en ejecución.")
             return
 
+        # Asegurar que el stream del micrófono esté limpio antes de abrirlo.
+        self._force_close_stream()
+
         logger.info("Iniciando escucha continua...")
         try:
             self._stop_listening_func = self.recognizer.listen_in_background(
@@ -357,15 +381,30 @@ class VoiceListener:
         except Exception as e:
             logger.error(f"Fallo al iniciar escucha: {e}")
 
+    def _force_close_stream(self) -> None:
+        """Cierra y limpia el stream del micrófono si quedó abierto."""
+        if hasattr(self.microphone, "stream") and self.microphone.stream is not None:
+            try:
+                self.microphone.stream.close()
+            except Exception:
+                pass
+            self.microphone.stream = None
+
     def stop(self) -> None:
         """Detiene la escucha y el hilo secundario."""
         if not self._is_listening or not self._stop_listening_func:
             return
 
         logger.info("Deteniendo escucha del micrófono...")
+        # wait_for_stop=False para no bloquear el hilo de Qt.
         self._stop_listening_func(wait_for_stop=False)
         self._stop_listening_func = None
         self._is_listening = False
+
+        # Forzar cierre del stream: el hilo de background puede no haber
+        # salido del `with source` todavía, así que lo cerramos nosotros
+        # para que start() pueda re-abrirlo sin AssertionError.
+        self._force_close_stream()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Orquestador Principal de Viernes — optimizado para latencia mínima con streaming."""
 
+import queue
 import sys
 import logging
 import threading
@@ -121,10 +122,25 @@ class ViernesController(QObject):
         else:
             logger.info("[PTZ] Sin host configurado. PTZ desactivado.")
 
+        # --- Parámetros de voz y subtítulos ---
+        voice_cfg = cfg.get("voice", {})
+        mic_name = voice_cfg.get("microphone_name", "")
+        whisper_model = voice_cfg.get("whisper_model", "small")
+        energy_threshold = voice_cfg.get("energy_threshold", 0)
+        pause_threshold = voice_cfg.get("pause_threshold", 0.8)
+        mic_index = find_microphone_index(mic_name)
+        initial_prompt = voice_cfg.get("initial_prompt", "")
+        tts_speed = float(voice_cfg.get("tts_speed", voice_cfg.get("speed", 1.15)))
+        typewriter_speed = int(voice_cfg.get("typewriter_speed_ms", 35))
+
+        # En Piper TTS, length_scale es inverso a la velocidad (ej: speed=1.15 -> length_scale=0.87)
+        tts_length_scale = round(1.0 / max(0.5, min(tts_speed, 2.5)), 2)
+
         # --- Dashboard ---
         self.dashboard = ViernesDashboard(
             self.camera,
             on_text_submitted=self._on_text_submitted_callback,
+            typewriter_speed_ms=typewriter_speed,
         )
 
         # --- Motion Tracker (requiere cámara + PTZ) ---
@@ -143,18 +159,9 @@ class ViernesController(QObject):
             on_camera_action=self._on_camera_action_callback,
         )
 
-        # --- Voz ---
-        voice_cfg = cfg.get("voice", {})
-        mic_name = voice_cfg.get("microphone_name", "")
-        whisper_model = voice_cfg.get("whisper_model", "small")
-        energy_threshold = voice_cfg.get("energy_threshold", 0)
-        pause_threshold = voice_cfg.get("pause_threshold", 0.8)
-        mic_index = find_microphone_index(mic_name) if mic_name else None
-        initial_prompt = voice_cfg.get("initial_prompt", "")
-
-        # VoiceSpeaker puede fallar si piper-tts o PyAudio no están instalados.
+        # --- Síntesis de Voz (TTS) ---
         try:
-            self.speaker: VoiceSpeaker | None = VoiceSpeaker()
+            self.speaker: VoiceSpeaker | None = VoiceSpeaker(length_scale=tts_length_scale)
         except Exception as exc:
             logger.warning(
                 "[TTS] No se pudo inicializar VoiceSpeaker: %s. "
@@ -181,6 +188,7 @@ class ViernesController(QObject):
 
         # --- Estado de inferencia ---
         self._inference_lock = threading.Lock()  # Solo una inferencia a la vez
+        self._cancel_event = threading.Event()   # Se setea para interrumpir el consumidor activo
         self._standby = False
         self._wake_from_chat = False
 
@@ -220,13 +228,11 @@ class ViernesController(QObject):
     # -----------------------------------------------------------------------
 
     def _is_voice_muted(self) -> bool:
-        """Anti-eco mínimo post-habla (solo bloquea 0.15s después de que Viernes terminó de hablar).
-        No bloquea mientras está hablando para permitir interrupciones por voz del usuario."""
+        """Devuelve True si el altavoz está activo o en los 0.6s posteriores
+        para evitar que el micrófono capture el audio de los parlantes (anti-eco)."""
         if self.speaker is None:
             return False
-        # Solo silenciar durante el breve rebote acústico post-silencio, nunca durante el habla
-        last = self.speaker._last_spoken_time
-        return not self.speaker.is_speaking and ((time.time() - last) < 0.15)
+        return self.speaker.is_active(cooldown_seconds=0.6)
 
     def _on_text_submitted_callback(self, text: str) -> None:
         """El usuario escribió en el chat. El texto escrito reactiva si estaba en standby."""
@@ -286,7 +292,10 @@ class ViernesController(QObject):
             self._entrar_standby()
             return
 
-        # Cancelar respuesta anterior si Viernes aún estaba hablando/pensando
+        # Cancelar respuesta anterior si Viernes aún estaba hablando/pensando.
+        # Primero seteamos el evento de cancelación para que el consumidor activo
+        # salga de su loop sin esperar que termine wait_until_done().
+        self._cancel_event.set()
         self.brain.cancel_current()
         if self.speaker:
             self.speaker.interrupt()
@@ -307,6 +316,7 @@ class ViernesController(QObject):
     def _entrar_standby(self) -> None:
         """Cierra el turno: una despedida corta y silencio en segundo plano."""
         self._standby = True
+        self._cancel_event.set()
         self.brain.cancel_current()
         if self.speaker:
             self.speaker.interrupt()
@@ -317,34 +327,81 @@ class ViernesController(QObject):
 
     def _stream_response(self, text: str) -> None:
         """
-        Genera la respuesta del LLM en streaming, enviando cada oración al TTS
-        y a la UI sin esperar el texto completo.
-
-        Ejecutado en un hilo secundario. Usa _inference_lock para serializar
-        múltiples llamadas concurrentes (la más reciente gana gracias al
-        cancel_token del brain).
+        Genera la respuesta del LLM en streaming desacoplado mediante cola productor-consumidor:
+        - El productor (LLM) genera oraciones a máxima velocidad sin trabarse por la voz.
+        - El consumidor (TTS + UI) reproduce cada oración de forma sincronizada con la pantalla.
+        - Si el usuario interrumpe (_cancel_event), el consumidor sale del loop de inmediato
+          sin esperar que el lock esté disponible (evita bloqueo entre turnos).
         """
+        # Limpiar el evento de cancelación ANTES de tomar el lock para esta nueva sesión.
+        # Si ya estaba seteado, significa que nos pidieron interrumpir; en ese caso la
+        # nueva invocación igualmente limpia el flag y empieza fresca.
+        self._cancel_event.clear()
+
         with self._inference_lock:
-            full_response = []
+            sentence_queue: queue.Queue[Optional[str]] = queue.Queue()
+            producer_error = []
 
+            def _llm_producer():
+                try:
+                    for sentence in self.brain.think_stream(text):
+                        if self._cancel_event.is_set():
+                            break  # Interrupción solicitada: cortar producción también
+                        if sentence and sentence.strip():
+                            sentence_queue.put(sentence)
+                except Exception as e:
+                    logger.error(f"Error en LLM stream producer: {e}")
+                    producer_error.append(e)
+                finally:
+                    sentence_queue.put(None)  # Centinela de fin
+
+            producer_thread = threading.Thread(
+                target=_llm_producer, daemon=True, name="llm-producer"
+            )
+            producer_thread.start()
+
+            # Consumidor: avanza oración por oración al ritmo natural de la voz.
+            # Chequea _cancel_event tras cada oración para salir de inmediato si
+            # el usuario interrumpió (sin esperar la siguiente iteración del queue).
             try:
-                for sentence in self.brain.think_stream(text):
-                    if not sentence:
-                        continue
-                    full_response.append(sentence)
+                while True:
+                    sentence = sentence_queue.get()
+                    if sentence is None:
+                        break  # Fin de la respuesta completa
 
-                    # Enviar cada oración al TTS y a la UI inmediatamente
-                    if self.speaker:
-                        self.speaker.speak(sentence)
+                    if self._cancel_event.is_set():
+                        sentence_queue.task_done()
+                        break  # Interrupción: salir sin reproducir ni esperar
+
+                    # Mostrar la oración en la UI
                     self.signal_sentence_ready.emit(sentence)
 
-            except Exception as e:
-                logger.error(f"Error en stream de respuesta: {e}")
-                error_msg = "Hubo un error procesando tu pregunta."
-                if self.speaker:
-                    self.speaker.speak(error_msg)
-                self.signal_sentence_ready.emit(error_msg)
+                    if self.speaker:
+                        self.speaker.speak(sentence)
+                        # wait_until_done() pero chequeando cancelación cada 50ms
+                        # para no bloquear el lock si el usuario interrumpe a mitad.
+                        while self.speaker.is_active() and not self._cancel_event.is_set():
+                            time.sleep(0.05)
+                    else:
+                        # Sin altavoz: simular duración proporcional al texto,
+                        # pero salir temprano si se cancela.
+                        deadline = time.time() + max(1.0, len(sentence) * 0.04)
+                        while time.time() < deadline and not self._cancel_event.is_set():
+                            time.sleep(0.05)
 
+                    sentence_queue.task_done()
+
+                    if self._cancel_event.is_set():
+                        break  # Salir después de marcar task_done
+
+                if producer_error and not self._cancel_event.is_set():
+                    error_msg = "Hubo un error procesando tu pregunta."
+                    self.signal_sentence_ready.emit(error_msg)
+                    if self.speaker:
+                        self.speaker.speak(error_msg)
+
+            except Exception as e:
+                logger.error(f"Error consumiendo stream de voz: {e}")
             finally:
                 self.signal_viernes_done.emit()
 
@@ -356,8 +413,7 @@ class ViernesController(QObject):
     @pyqtSlot()
     def _slot_viernes_done(self) -> None:
         """La respuesta completa terminó. Volver al estado de escucha."""
-        # El dashboard vuelve al estado LISTENING automáticamente vía update_subtitle
-        pass
+        self.dashboard.set_state(ViernesState.LISTENING)
 
     @pyqtSlot(str)
     def _slot_camera_action(self, description: str) -> None:

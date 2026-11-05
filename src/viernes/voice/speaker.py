@@ -143,7 +143,7 @@ class VoiceSpeaker:
         self,
         models_dir: Optional[Path] = None,
         model_name: str = "es_AR-daniela-high",
-        length_scale: float = 1.18,
+        length_scale: float = 0.92,
     ):
         """
         :param models_dir:   Directorio donde se guardan los modelos Piper.

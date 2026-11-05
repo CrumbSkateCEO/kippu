@@ -326,6 +326,25 @@ class ViernesBrain:
             f"PTZ: {'✓' if ptz_controller else '✗'}"
         )
 
+        # Pre-calentar el KV cache de Ollama en un hilo daemon para que
+        # la primera pregunta del usuario no sufra latencia de compilación.
+        threading.Thread(target=self._prewarm_cache, daemon=True, name="ollama-warmup").start()
+
+    def _prewarm_cache(self) -> None:
+        """Pre-carga el system prompt en el KV cache de Ollama en segundo plano."""
+        if ollama is None:
+            return
+        try:
+            logger.info("Pre-calentando KV cache de Ollama en segundo plano...")
+            ollama.chat(
+                model=self.model_name,
+                messages=[self.system_prompt, {"role": "user", "content": "iniciar"}],
+                options={"num_predict": 1, "num_ctx": 4096},
+            )
+            logger.info("KV cache de Ollama pre-cargado exitosamente en RAM.")
+        except Exception as e:
+            logger.debug(f"Aviso durante pre-calentamiento de Ollama: {e}")
+
     # -----------------------------------------------------------------------
     # Construcción interna
     # -----------------------------------------------------------------------
@@ -489,6 +508,11 @@ class ViernesBrain:
                 model=self.model_name,
                 messages=history_snapshot,
                 stream=True,              # ← Streaming habilitado
+                options={
+                    "num_predict": 450,   # Permite respuestas completas sin truncamiento prematuro
+                    "temperature": 0.7,
+                    "num_ctx": 4096,      # Contexto amplio para retener el dossier completo en KV cache
+                },
             )
             if self._active_tools:
                 call_kwargs["tools"] = self._active_tools

@@ -102,10 +102,10 @@ model = "qwen2.5:3b"
 #   "audiorelay"  → celular vía Audio Relay (LAN)
 #   "ALC887"      → micrófono analógico de la placa madre
 #   ""            → default del sistema
-microphone_name = "audiorelay"
+microphone_name = ""
 
-# Tamaño del modelo Whisper para STT: "tiny" (rápido) | "base" | "small"
-whisper_model = "small"
+# Tamaño del modelo Whisper para STT: "tiny" (rápido) | "base" (recomendado) | "small"
+whisper_model = "base"
 
 # Sensibilidad del micrófono:
 # 0 = Calibración automática según tu micrófono (recomendado).
@@ -120,4 +120,17 @@ pause_threshold = 0.8
 # Dejar vacío ("") para usar el prompt por defecto del código.
 # Ejemplo: "Viernes, CrumbSkate, Kippu. Comandos: foto, zoom, mover, izquierda."
 initial_prompt = ""
+
+# ---------------------------------------------------------------------------
+# Síntesis de voz (TTS) y sincronización de subtítulos
+# ---------------------------------------------------------------------------
+# Velocidad de reproducción de la voz (TTS neuronal Piper):
+# 1.0 = normal | 1.15 = ágil y fluida (recomendado) | 0.9 = pausada
+tts_speed = 1.15
+
+# Velocidad de tipeo de texto en pantalla (ms por letra):
+# 30-40 ms = sincronizado con el habla de la voz
+# 0 = muestra cada oración completa de inmediato
+typewriter_speed_ms = 35
+
 
