@@ -19,6 +19,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--simulate", action="store_true", help="Simula cámara, saludo, rostro e impresión.")
     parser.add_argument("--headless", action="store_true", help="No abre ventana; útil para diagnósticos y automatización.")
     parser.add_argument("--diagnostic", action="store_true", help="Sondea cámara e impresora sin crear un trabajo.")
+    parser.add_argument("--allow-inkless", action="store_true", help="Permite operar con impresora sin tinta o que reporta advertencias/pausa en CUPS.")
     return parser
 
 
@@ -26,6 +27,12 @@ def main() -> int:
     arguments = _parser().parse_args()
     try:
         settings = load_settings(arguments.config)
+        if arguments.allow_inkless:
+            from dataclasses import replace
+            settings = replace(
+                settings,
+                printing=replace(settings.printing, allow_inkless=True),
+            )
         configure_logging(settings.logging)
         purge_now(settings.storage)
         if arguments.diagnostic:

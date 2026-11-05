@@ -49,6 +49,7 @@ class PrintSettings:
     minimum_printing_message_seconds: float = 1.5
     monitor_window_seconds: float = 20.0
     printer_name: str | None = None
+    allow_inkless: bool = False
 
 
 @dataclass(frozen=True)
@@ -143,6 +144,7 @@ def load_settings(path: Path) -> AppSettings:
             minimum_printing_message_seconds=float(printing.get("minimum_printing_message_seconds", 1.5)),
             monitor_window_seconds=float(printing.get("monitor_window_seconds", 20)),
             printer_name=printer_name,
+            allow_inkless=bool(printing.get("allow_inkless", False)),
         ),
         storage=StorageSettings(
             jobs_directory=_relative_to_root(str(storage.get("jobs_directory", "data/jobs")), root),

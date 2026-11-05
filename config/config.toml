@@ -1,5 +1,5 @@
 [camera]
-index = 1
+index = 0
 # "auto" usa V4L2/GStreamer en Linux, DirectShow/MSMF en Windows y el fallback de OpenCV.
 backend = "auto"
 width = 640
@@ -29,6 +29,8 @@ expected_dpi = 300
 minimum_printing_message_seconds = 1.5
 monitor_window_seconds = 20
 printer_name = ""
+# Permite probar con impresoras sin tinta (ignora advertencias o colas pausadas en CUPS)
+allow_inkless = true
 
 [storage]
 jobs_directory = "data/jobs"

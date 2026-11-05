@@ -211,7 +211,15 @@ class Application:
         try:
             printer_probe = self.printer.probe()
             if printer_probe.health is not PrinterHealth.READY:
-                raise PrinterError(printer_probe.detail)
+                if self.settings.printing.allow_inkless:
+                    LOGGER.warning(
+                        "Impresora '%s' reporta estado '%s' (%s). Modo allow_inkless activo: continuando inicio.",
+                        printer_probe.printer_name,
+                        printer_probe.health.value,
+                        printer_probe.detail,
+                    )
+                else:
+                    raise PrinterError(printer_probe.detail)
             LOGGER.info(printer_probe.detail, extra={"event": "printer_probe"})
         except PrinterError as error:
             self.state_manager.dispatch(AppEvent(AppEventType.PRINTER_FAILURE, message=str(error)), now)
@@ -316,7 +324,9 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
     clock = SystemClock()
     layout = default_layout(settings.project_root)
     if real_printer and layout.template_path is None:
-        raise ConfigurationError("La impresión real requiere assets/templates/carnet_base.png con el diseño aprobado.")
+        if not settings.printing.allow_inkless:
+            raise ConfigurationError("La impresión real requiere assets/templates/carnet_base.png con el diseño aprobado.")
+        LOGGER.warning("assets/templates/carnet_base.png no encontrado. Modo allow_inkless: usando composición programática.")
     if simulate:
         camera: CameraService = SimulatedCamera(clock)
         pose_detector: PoseDetector = SimulatedPoseDetector()
@@ -385,6 +395,8 @@ def run_diagnostic(settings: AppSettings, real_printer: bool) -> int:
         print(f"CAMERA: {camera_probe.resolution[0]}x{camera_probe.resolution[1]} @ {camera_probe.fps:.1f} FPS — {camera_probe.detail}")
         printer_probe = application.printer.probe()
         print(f"PRINTER: {printer_probe.printer_name} — {printer_probe.health.value} — {printer_probe.detail}")
+        if real_printer and printer_probe.health is not PrinterHealth.READY and settings.printing.allow_inkless:
+            print(f"PRINTER_WARNING: Estado '{printer_probe.health.value}', ignorado por allow_inkless=True.")
         print(
             f"PLATFORM: {sys.platform} — landmarks={'on' if settings.ui.show_landmarks else 'off'} "
             f"— guest_form={'on' if settings.ui.guest_form_enabled else 'off'}"

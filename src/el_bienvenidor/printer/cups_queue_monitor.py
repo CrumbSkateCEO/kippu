@@ -40,11 +40,16 @@ class CupsQueueMonitor:
                 return replace(receipt, disposition=PrinterDisposition.QUEUE_ERROR, detail=f"CUPS: {detail}")
             health = _cups_health(detail)
             if health is not PrinterHealth.READY:
-                return replace(receipt, disposition=PrinterDisposition.QUEUE_ERROR, detail=f"Impresora CUPS: {detail}")
+                if not self._settings.allow_inkless:
+                    return replace(receipt, disposition=PrinterDisposition.QUEUE_ERROR, detail=f"Impresora CUPS: {detail}")
             queue = self._run([lpstat, "-W", "not-completed", "-o", receipt.printer_name])
             if queue.returncode != 0:
-                return replace(receipt, disposition=PrinterDisposition.QUEUE_ERROR, detail=f"CUPS: {(queue.stderr or queue.stdout).strip()}")
+                if not self._settings.allow_inkless:
+                    return replace(receipt, disposition=PrinterDisposition.QUEUE_ERROR, detail=f"CUPS: {(queue.stderr or queue.stdout).strip()}")
             if job_token not in queue.stdout:
-                return replace(receipt, detail="El spooler CUPS finalizó el trabajo.")
+                msg = "El spooler CUPS finalizó el trabajo."
+                if self._settings.allow_inkless and health is not PrinterHealth.READY:
+                    msg += f" (Aviso impresora: {detail})"
+                return replace(receipt, detail=msg)
             time.sleep(1.0)
         return replace(receipt, detail="Ventana de supervisión CUPS agotada sin un error reportado por el driver.")
