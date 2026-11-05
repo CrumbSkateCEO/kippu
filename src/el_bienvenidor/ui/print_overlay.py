@@ -241,3 +241,4 @@ def _state_info(state: AppState) -> tuple[str, tuple[int, int, int]]:
         AppState.PROCESSING: ("COMPONIENDO CARNET", (20, 48, 32)),
         AppState.PRINTING:   ("ENVIANDO A IMPRIMIR", (10, 36, 60)),
     }.get(state, (state.value.upper(), (28, 32, 42)))
+
