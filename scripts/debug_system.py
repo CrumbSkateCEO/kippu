@@ -496,7 +496,7 @@ def main() -> int:
 
     print(f"\n{BOLD}{CYAN}════════════════════════════════════════════════════════{RESET}")
     print(f"{GREEN}{BOLD}Diagnóstico finalizado.{RESET}")
-    print(f"Para iniciar el kiosco en modo sin tinta: {CYAN}./run_kippu.sh --real-printer --allow-inkless{RESET}\n")
+    print(f"Para iniciar el recepcionista en modo sin tinta: {CYAN}./run_kippu.sh --real-printer --allow-inkless{RESET}\n")
     return 0
 
 

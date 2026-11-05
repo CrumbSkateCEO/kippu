@@ -13,7 +13,7 @@ from el_bienvenidor.services.retention import purge_now
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Kippu — kiosco de bienvenida e impresión local")
+    parser = argparse.ArgumentParser(description="Kippu — recepcionista de bienvenida e impresión local")
     parser.add_argument("--config", type=Path, default=Path("config/config.toml"), help="Ruta al TOML local.")
     parser.add_argument("--real-printer", action="store_true", help="Habilita impresión real (Windows o CUPS en Linux); sin este flag siempre se usa dry_run.")
     parser.add_argument("--simulate", action="store_true", help="Simula cámara, saludo, rostro e impresión.")

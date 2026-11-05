@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kippu"
 version = "0.1.0"
-description = "Kiosco local de captura, mapeo corporal e impresión para Windows y Linux"
+description = "Recepcionista digital de bienvenida, captura e impresión de credenciales"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
