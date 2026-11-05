@@ -1,7 +1,7 @@
 # =============================================================================
-# Kippu — Dependencias Python
+# Kippu (el_bienvenidor) — Dependencias Python
 # =============================================================================
-# Instalación recomendada (Debian/Ubuntu/CachyOS/Arch):
+# Instalación recomendada (Debian/Ubuntu/Arch/CachyOS):
 #
 #   uv venv .venv && source .venv/bin/activate
 #   uv pip install -r requirements.txt
@@ -9,10 +9,10 @@
 # Requisitos de sistema PREVIOS (instalar con el gestor de paquetes del SO):
 #
 #   Debian/Ubuntu:
-#     sudo apt install portaudio19-dev python3-dev ffmpeg libopencv-dev
+#     sudo apt install python3-dev libopencv-dev
 #
 #   Arch/CachyOS (pacman):
-#     sudo pacman -S portaudio python ffmpeg
+#     sudo pacman -S python
 #
 # =============================================================================
 
@@ -25,22 +25,3 @@ tomli>=2.0; python_version < "3.11"
 
 # --- Windows únicamente (impresión GDI) --------------------------------------
 pywin32>=306; platform_system == "Windows"
-
-# --- Viernes: HUD y LLM ------------------------------------------------------
-PyQt6>=6.5
-ollama>=0.3
-
-# --- Viernes: STT (Whisper local) --------------------------------------------
-# openai-whisper requiere ffmpeg instalado en el sistema.
-SpeechRecognition>=3.10
-openai-whisper>=20231117
-
-# --- Viernes: TTS (Piper offline) --------------------------------------------
-piper-tts>=1.2
-# PyAudio necesita PortAudio en el sistema (ver instrucciones arriba).
-pyaudio>=0.2.14
-
-# --- Cámara IP PTZ vía ONVIF (opcional) --------------------------------------
-# Solo necesario si se usa el control PTZ de la cámara.
-# En Arch/CachyOS puede requerir: uv pip install onvif-zeep
-onvif-zeep>=0.2.12
