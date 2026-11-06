@@ -57,7 +57,6 @@ kippu/
 ## Instalación
 
 ```bash
-<<<<<<< HEAD
 git clone https://github.com/CrumbSkateCEO/kippu.git
 cd kippu
 ```
@@ -88,21 +87,7 @@ Edita `config/config.toml` según tu hardware. Los parámetros más importantes:
 
 ```toml
 [camera]
-source_type = "webcam" # "webcam" o "ip"
-index = 0              # Índice para webcam local
-
-# O para cámara IP / RTSP con PyAV (sin latencia):
-# source_type = "ip"
-# ip_url = "rtsp://frww:nc6dd3@192.168.1.10:554/live/ch0"
-# rtsp_transport = "tcp"
-# low_delay = true
-
-[ptz]
-enabled = false         # Activar seguimiento facial motorizado ONVIF PTZ
-# Si se deja vacío, host y credenciales se extraen de camera.ip_url automáticamente
-port = 8899             # Puerto ONVIF (8899, 80 o según la cámara)
-pan_speed = 0.30        # Velocidad de giro horizontal
-tilt_speed = 0.25       # Velocidad de giro vertical
+index = 0           # Índice de cámara (0 = webcam por defecto)
 
 [print]
 dry_run = true      # Cambiar a false para imprimir de verdad
@@ -111,18 +96,11 @@ printer_name = ""   # Nombre exacto de la impresora en CUPS/Windows
 [ui]
 fullscreen = true
 card_headline = "¡Bienvenido!"
-=======
-# Crear entorno virtual e instalar dependencias
-uv venv .venv && source .venv/bin/activate
-uv pip install -r requirements.txt
->>>>>>> 35b724cc2cf70de78c503b02421cd6968d352e1b
 ```
 
 ---
 
-## Diagnóstico y Pruebas del Sistema
-
-<<<<<<< HEAD
+## Ejecución — El Bienvenidor (Fotomatón)
 
 ### Modo normal
 
@@ -140,15 +118,12 @@ bash scripts/run.sh
 
 ### Opciones disponibles
 
-| Flag              | Descripción                                            |
-| ----------------- | ------------------------------------------------------ |
-| `--simulate`      | Simula cámara, saludo y rostro sin hardware real       |
-| `--real-printer`  | Activa impresión real (requiere impresora configurada) |
-| `--headless`      | Sin ventana gráfica (útil para tests)                  |
-| `--diagnostic`    | Verifica cámara e impresora sin capturar               |
-| `--ip-camera URL` | Conecta a cámara IP / RTSP con PyAV y latencia cero    |
-| `--webcam INDEX`  | Selecciona el índice de la webcam local                |
-| `--ptz-track`     | Activa seguimiento motorizado de rostro (ONVIF PTZ)    |
+| Flag             | Descripción                                            |
+| ---------------- | ------------------------------------------------------ |
+| `--simulate`     | Simula cámara, saludo y rostro sin hardware real       |
+| `--real-printer` | Activa impresión real (requiere impresora configurada) |
+| `--headless`     | Sin ventana gráfica (útil para tests)                  |
+| `--diagnostic`   | Verifica cámara e impresora sin capturar               |
 
 **Ejemplos:**
 
@@ -171,59 +146,6 @@ bash scripts/run.sh --diagnostic
 ## Ejecución — Viernes (Asistente IA)
 
 ### Prerrequisito: tener Ollama corriendo
-
-```bash
-# Instalar Ollama desde https://ollama.com y luego:
-ollama pull llama3.1
-ollama serve
-```
-
-### Lanzar Viernes
-
-```bash
-.venv/bin/python -m src.viernes.core.main
-```
-
-> La primera vez descargará el modelo de voz Piper (~60-114MB según la voz) automáticamente desde HuggingFace.
-
-### Flujo de Viernes
-
-1. Se abre el **HUD** (pantalla fullscreen estilo J.A.R.V.I.S.) con el feed de la cámara.
-2. Viernes dice "Sistemas en línea. Te escucho." al arrancar.
-3. El **micrófono** escucha continuamente usando Whisper (offline).
-4. Cuando detectas el fin de tu frase, el texto va al **LLM** (Ollama) para generar respuesta.
-5. La respuesta se muestra en el HUD y se reproduce por el **altavoz** (Piper TTS).
-
-### Cambiar la voz de Viernes
-
-Editar el parámetro `model_name` al instanciar `VoiceSpeaker` en `core/main.py`:
-
-```python
-# Voces disponibles en assets/voices/:
-VoiceSpeaker(model_name="es_MX-claude-high")   # Voz masculina
-VoiceSpeaker(model_name="es_MX-ald-medium")    # Más ligera
-VoiceSpeaker(model_name="es_AR-daniela-high")  # Por defecto (Argentina)
-```
-
-### Cambiar el modelo LLM
-
-En `src/viernes/llm/brain.py`, modificar el parámetro `model_name`:
-
-```python
-ViernesBrain(model_name="phi3")      # Más rápido en CPU
-ViernesBrain(model_name="llama3.1")  # Por defecto
-```
-
----
-
-## Diagnóstico y Solución de Problemas
-
-### Verificar dispositivos
-
-=======
-Antes de iniciar el evento, podés verificar que cada parte del recepcionista funcione correctamente (cámara, IA, composición e impresora):
-
-> > > > > > > 35b724cc2cf70de78c503b02421cd6968d352e1b
 
 ```bash
 # Diagnóstico completo de todos los subsistemas:
