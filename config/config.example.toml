@@ -40,6 +40,8 @@ expected_dpi = 300
 minimum_printing_message_seconds = 1.5
 monitor_window_seconds = 20
 printer_name = ""
+# Permite probar con impresoras sin tinta (ignora advertencias o colas pausadas en CUPS)
+allow_inkless = true
 
 [storage]
 jobs_directory = "data/jobs"

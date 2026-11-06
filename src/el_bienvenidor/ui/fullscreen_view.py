@@ -7,8 +7,9 @@ import logging
 from typing import Any, Protocol
 
 from el_bienvenidor.config import UiSettings
-from el_bienvenidor.domain.models import AppSnapshot, FramePacket, LandmarkMap
+from el_bienvenidor.domain.models import AppSnapshot, AppState, FramePacket, LandmarkMap
 from el_bienvenidor.ui.overlay import draw_landmark_map, draw_overlay
+from el_bienvenidor.ui.print_overlay import draw_print_screen
 
 LOGGER = logging.getLogger(__name__)
 
@@ -36,9 +37,21 @@ def _cv2() -> Any:
     return cv2
 
 
+# Estados en los que se muestra la pantalla post-foto en lugar del feed de cámara.
+_POST_PHOTO_STATES = {AppState.PROCESSING, AppState.PRINTING}
+
+
 class OpenCVFullscreenView:
-    def __init__(self, settings: UiSettings) -> None:
+    def __init__(
+        self,
+        settings: UiSettings,
+        *,
+        allow_inkless: bool = False,
+        printer_name: str | None = None,
+    ) -> None:
         self._settings = settings
+        self._allow_inkless = allow_inkless
+        self._printer_name = printer_name
         self._is_open = False
 
     def open(self) -> None:
@@ -60,8 +73,21 @@ class OpenCVFullscreenView:
             image = np.zeros((720, 1280, 3), dtype=np.uint8)
         else:
             image = preview.image_bgr[:, ::-1].copy()
-        image = draw_landmark_map(image, landmark_map, mirrored=True)
-        cv2.imshow(self._settings.window_name, draw_overlay(image, snapshot))
+
+        if snapshot.state in _POST_PHOTO_STATES:
+            # Pantalla post-foto: miniatura del carnet + estado de impresión.
+            frame = draw_print_screen(
+                image,
+                snapshot,
+                allow_inkless=self._allow_inkless,
+                printer_name=self._printer_name,
+            )
+        else:
+            # HUD normal: feed de cámara con overlays de saludo/cuenta.
+            image = draw_landmark_map(image, landmark_map, mirrored=True)
+            frame = draw_overlay(image, snapshot)
+
+        cv2.imshow(self._settings.window_name, frame)
 
     def poll_commands(self) -> list[UserCommand]:
         if not self._is_open:

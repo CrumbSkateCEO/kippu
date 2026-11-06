@@ -2,7 +2,7 @@
 # Tipo de cámara: "webcam" o "ip"
 source_type = "webcam"
 # Para webcam: índice del dispositivo local
-index = 1
+index = 0
 # Para cámara IP: URL del flujo RTSP o HTTP mediante PyAV/FFmpeg sin latencia
 # source_type = "ip"
 # ip_url = "rtsp://frww:nc6dd3@192.168.1.10:554/live/ch0"
@@ -30,13 +30,15 @@ secondary_face_area_ratio = 0.65
 minimum_face_height_px = 80
 
 [print]
-dry_run = true
+dry_run = false
 expected_width_px = 1181
 expected_height_px = 1772
 expected_dpi = 300
 minimum_printing_message_seconds = 1.5
 monitor_window_seconds = 20
 printer_name = ""
+# Permite probar con impresoras sin tinta (ignora advertencias o colas pausadas en CUPS)
+allow_inkless = false
 
 [storage]
 jobs_directory = "data/jobs"

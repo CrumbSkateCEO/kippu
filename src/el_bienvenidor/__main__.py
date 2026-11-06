@@ -14,7 +14,7 @@ from el_bienvenidor.services.retention import purge_now
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Kippu — kiosco de bienvenida e impresión local")
+    parser = argparse.ArgumentParser(description="Kippu — recepcionista de bienvenida e impresión local")
     parser.add_argument("--config", type=Path, default=Path("config/config.toml"), help="Ruta al TOML local.")
     parser.add_argument("--real-printer", action="store_true", help="Habilita impresión real (Windows o CUPS en Linux); sin este flag siempre se usa dry_run.")
     parser.add_argument("--simulate", action="store_true", help="Simula cámara, saludo, rostro e impresión.")
@@ -23,6 +23,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ip-camera", type=str, default=None, help="URL de cámara IP / RTSP (usa PyAV sin latencia). Anula camera.source_type a 'ip'.")
     parser.add_argument("--webcam", type=int, default=None, help="Índice de webcam local a utilizar. Anula camera.source_type a 'webcam'.")
     parser.add_argument("--ptz-track", action="store_true", help="Habilita seguimiento de rostro motorizado ONVIF PTZ.")
+    parser.add_argument("--allow-inkless", action="store_true", help="Permite operar con impresora sin tinta o que reporta advertencias/pausa en CUPS.")
     return parser
 
 
@@ -30,6 +31,11 @@ def main() -> int:
     arguments = _parser().parse_args()
     try:
         settings = load_settings(arguments.config)
+        if arguments.allow_inkless:
+            settings = replace(
+                settings,
+                printing=replace(settings.printing, allow_inkless=True),
+            )
         if arguments.ip_camera:
             settings = replace(
                 settings,

@@ -97,6 +97,15 @@ class CupsPrinter:
             raise PrinterError("La impresora recibió un artefacto fuera del contrato 10x15.")
         lp, _ = self._commands()
         name = self._name()
+        if self._settings.allow_inkless:
+            # En modo sin tinta o pruebas, si la impresora quedó detenida o rechazada por el driver,
+            # intentamos rehabilitarla antes del envío.
+            cupsenable = self._which("cupsenable") or "/usr/sbin/cupsenable"
+            cupsaccept = self._which("cupsaccept") or "/usr/sbin/cupsaccept"
+            if shutil.which(cupsenable) or os.path.exists(cupsenable):
+                self._run([cupsenable, name])
+            if shutil.which(cupsaccept) or os.path.exists(cupsaccept):
+                self._run([cupsaccept, name])
         document_name = f"Kippu-{artifact.job_id}"
         try:
             result = self._run([lp, "-d", name, "-t", document_name, str(artifact.png_path)])

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import logging
+from pathlib import Path
 import sys
 from time import sleep
 from typing import Any
@@ -106,6 +107,10 @@ class Application:
     _next_camera_retry_s: float = 0.0
     _running: bool = False
     _shutdown_complete: bool = False
+    _last_card_path: Path | None = None
+    """Ruta al PNG del carnet cuando ya fue compuesto (desde CARD_COMPOSED en adelante)."""
+    _print_detail: str = ""
+    """Detalle devuelto por CUPS al enviar/completar el trabajo de impresión."""
 
     def run(self, max_ticks: int | None = None) -> int:
         self._running = True
@@ -132,7 +137,13 @@ class Application:
                 landmarks = self._last_landmark_map if self.settings.ui.show_landmarks else None
                 guest_name = self._guest.guest_name if self._guest else None
                 self.view.render(
-                    self.state_manager.snapshot(now, self.gesture_gate.state.elapsed(now), guest_name=guest_name),
+                    self.state_manager.snapshot(
+                        now,
+                        self.gesture_gate.state.elapsed(now),
+                        guest_name=guest_name,
+                        card_path=self._last_card_path,
+                        print_detail=self._print_detail,
+                    ),
                     self._last_frame,
                     landmarks,
                 )
@@ -214,7 +225,15 @@ class Application:
         try:
             printer_probe = self.printer.probe()
             if printer_probe.health is not PrinterHealth.READY:
-                raise PrinterError(printer_probe.detail)
+                if self.settings.printing.allow_inkless:
+                    LOGGER.warning(
+                        "Impresora '%s' reporta estado '%s' (%s). Modo allow_inkless activo: continuando inicio.",
+                        printer_probe.printer_name,
+                        printer_probe.health.value,
+                        printer_probe.detail,
+                    )
+                else:
+                    raise PrinterError(printer_probe.detail)
             LOGGER.info(printer_probe.detail, extra={"event": "printer_probe"})
         except PrinterError as error:
             self.state_manager.dispatch(AppEvent(AppEventType.PRINTER_FAILURE, message=str(error)), now)
@@ -305,14 +324,24 @@ class Application:
 
     def _consume_job_events(self, now: float) -> None:
         for event in self.worker.poll_events():
-            if event.kind is JobEventType.PRINT_SUBMITTED:
+            if event.kind is JobEventType.CARD_COMPOSED:
+                # Capturamos la ruta del carnet compuesto para mostrarlo en la interfaz post-foto.
+                self._last_card_path = Path(event.message) if event.message else None
+                LOGGER.debug("Carnet compuesto: %s", self._last_card_path)
+            elif event.kind is JobEventType.PRINT_SUBMITTED:
+                self._print_detail = event.message
                 self.state_manager.dispatch(AppEvent(AppEventType.PRINT_SUBMITTED, event.job_id, event.message), now)
             elif event.kind is JobEventType.PRINT_COMPLETED:
+                self._print_detail = event.message
                 self.state_manager.dispatch(AppEvent(AppEventType.PRINT_COMPLETED, event.job_id, event.message), now)
+                # Limpiamos el carnet al volver al estado IDLE.
+                self._last_card_path = None
+                self._print_detail = ""
                 if self.settings.ui.ask_guest_each_job:
                     self._guest = None
                     self._needs_guest_intake = True
             elif event.kind is JobEventType.PROCESSING_FAILED:
+                self._last_card_path = None
                 self.state_manager.dispatch(AppEvent(AppEventType.PROCESSING_FAILED, event.job_id, event.message), now)
             elif event.kind is JobEventType.PRINTER_FAILED:
                 self.state_manager.dispatch(AppEvent(AppEventType.PRINTER_FAILURE, event.job_id, event.message), now)
@@ -338,7 +367,9 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
     clock = SystemClock()
     layout = default_layout(settings.project_root)
     if real_printer and layout.template_path is None:
-        raise ConfigurationError("La impresión real requiere assets/templates/carnet_base.png con el diseño aprobado.")
+        if not settings.printing.allow_inkless:
+            raise ConfigurationError("La impresión real requiere assets/templates/carnet_base.png con el diseño aprobado.")
+        LOGGER.warning("assets/templates/carnet_base.png no encontrado. Modo allow_inkless: usando composición programática.")
     if simulate:
         camera: CameraService = SimulatedCamera(clock)
         pose_detector: PoseDetector = SimulatedPoseDetector()
@@ -396,7 +427,11 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
         gesture_gate=GestureGate(settings.vision.salute_hold_seconds),
         worker=worker,
         printer=printer,
-        view=HeadlessView() if headless else OpenCVFullscreenView(settings.ui),
+        view=HeadlessView() if headless else OpenCVFullscreenView(
+            settings.ui,
+            allow_inkless=settings.printing.allow_inkless,
+            printer_name=settings.printing.printer_name,
+        ),
         ptz_tracker=ptz_tracker,
         headless=headless,
     )
@@ -415,6 +450,8 @@ def run_diagnostic(settings: AppSettings, real_printer: bool) -> int:
                 print("PTZ: No se pudo conectar a la cámara ONVIF.")
         printer_probe = application.printer.probe()
         print(f"PRINTER: {printer_probe.printer_name} — {printer_probe.health.value} — {printer_probe.detail}")
+        if real_printer and printer_probe.health is not PrinterHealth.READY and settings.printing.allow_inkless:
+            print(f"PRINTER_WARNING: Estado '{printer_probe.health.value}', ignorado por allow_inkless=True.")
         print(
             f"PLATFORM: {sys.platform} — landmarks={'on' if settings.ui.show_landmarks else 'off'} "
             f"— guest_form={'on' if settings.ui.guest_form_enabled else 'off'}"

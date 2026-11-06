@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 from el_bienvenidor.core.events import AppEvent, AppEventType
 from el_bienvenidor.domain.models import AppSnapshot, AppState, Transition
@@ -110,6 +111,8 @@ class StateManager:
         now_monotonic_s: float,
         greeting_elapsed_s: float = 0.0,
         guest_name: str | None = None,
+        card_path: Path | None = None,
+        print_detail: str = "",
     ) -> AppSnapshot:
         countdown_value: int | None = None
         if self._state is AppState.COUNTDOWN:
@@ -124,5 +127,7 @@ class StateManager:
             greeting_elapsed_s=greeting_elapsed_s,
             countdown_value=countdown_value,
             guest_name=guest_name,
+            card_path=card_path,
+            print_detail=print_detail,
         )
 
