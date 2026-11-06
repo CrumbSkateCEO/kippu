@@ -16,6 +16,10 @@ except ModuleNotFoundError:  # Python 3.10
 
 @dataclass(frozen=True)
 class CameraSettings:
+    source_type: str = "webcam"
+    ip_url: str = ""
+    rtsp_transport: str = "tcp"
+    low_delay: bool = True
     index: int = 0
     backend: str = "auto"
     width: int = 1280
@@ -106,6 +110,12 @@ def load_settings(path: Path) -> AppSettings:
         raw = tomllib.load(config_file)
     root = path.resolve().parent.parent
     camera = _table(raw, "camera")
+    source_type = str(camera.get("source_type", "webcam")).strip().lower()
+    ip_url = str(camera.get("ip_url", "")).strip()
+    if camera.get("source_type") is None and ip_url:
+        source_type = "ip"
+    rtsp_transport = str(camera.get("rtsp_transport", "tcp")).strip().lower()
+    low_delay = bool(camera.get("low_delay", True))
     vision = _table(raw, "vision")
     printing = _table(raw, "print")
     storage = _table(raw, "storage")
@@ -114,6 +124,10 @@ def load_settings(path: Path) -> AppSettings:
     printer_name = str(printing.get("printer_name", "")).strip() or None
     settings = AppSettings(
         camera=CameraSettings(
+            source_type=source_type,
+            ip_url=ip_url,
+            rtsp_transport=rtsp_transport,
+            low_delay=low_delay,
             index=int(camera.get("index", 0)),
             backend=str(camera.get("backend", "auto")),
             width=int(camera.get("width", 1280)),
@@ -172,10 +186,18 @@ def validate_settings(settings: AppSettings) -> None:
     camera = settings.camera
     vision = settings.vision
     printing = settings.printing
-    if camera.index < 0 or camera.width < 320 or camera.height < 240 or camera.fps <= 0:
-        raise ConfigurationError("La configuración de cámara es inválida.")
-    if not camera.backend.strip():
-        raise ConfigurationError("camera.backend debe ser un backend OpenCV o 'auto'.")
+    if camera.source_type == "webcam":
+        if camera.index < 0 or camera.width < 320 or camera.height < 240 or camera.fps <= 0:
+            raise ConfigurationError("La configuración de cámara es inválida.")
+        if not camera.backend.strip():
+            raise ConfigurationError("camera.backend debe ser un backend OpenCV o 'auto'.")
+    elif camera.source_type in ("ip", "rtsp"):
+        if not camera.ip_url.strip():
+            raise ConfigurationError("Para usar cámara IP ('ip'), debe especificar camera.ip_url.")
+        if camera.rtsp_transport not in ("tcp", "udp"):
+            raise ConfigurationError("camera.rtsp_transport debe ser 'tcp' o 'udp'.")
+    else:
+        raise ConfigurationError("camera.source_type debe ser 'webcam' o 'ip'.")
     if camera.read_failure_threshold < 1 or not camera.reconnect_delays_seconds:
         raise ConfigurationError("La recuperación de cámara requiere umbrales y demoras positivas.")
     if any(delay <= 0 for delay in camera.reconnect_delays_seconds):

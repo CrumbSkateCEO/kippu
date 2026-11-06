@@ -10,7 +10,7 @@ from time import sleep
 from typing import Any
 from uuid import uuid4
 
-from el_bienvenidor.camera.camera_service import CameraService, OpenCVCameraService
+from el_bienvenidor.camera.camera_service import CameraService, OpenCVCameraService, create_camera_service
 from el_bienvenidor.composition.layout import default_layout
 from el_bienvenidor.config import AppSettings
 from el_bienvenidor.core.clock import Clock, SystemClock
@@ -324,7 +324,7 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
         printer: PrintBackend = DryRunPrintBackend()
         monitor: PrintMonitor = NoopQueueMonitor()
     else:
-        camera = OpenCVCameraService(settings.camera)
+        camera = create_camera_service(settings.camera)
         models_dir = settings.project_root / "assets" / "models"
         use_opencv = (
             settings.vision.backend == "opencv"

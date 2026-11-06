@@ -15,6 +15,7 @@ dependencies = [
     "Pillow>=10.0",
     "pywin32>=306; platform_system == 'Windows'",
     "tomli>=2.0; python_version < '3.11'",
+    "av>=17.1.0",
 ]
 
 [project.scripts]

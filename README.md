@@ -95,7 +95,14 @@ Edita `config/config.toml` según tu hardware. Los parámetros más importantes:
 
 ```toml
 [camera]
-index = 0           # Índice de cámara (0 = webcam por defecto)
+source_type = "webcam" # "webcam" o "ip"
+index = 0              # Índice para webcam local
+
+# O para cámara IP / RTSP con PyAV (sin latencia):
+# source_type = "ip"
+# ip_url = "rtsp://frww:nc6dd3@192.168.1.10:554/live/ch0"
+# rtsp_transport = "tcp"
+# low_delay = true
 
 [print]
 dry_run = true      # Cambiar a false para imprimir de verdad
@@ -130,6 +137,8 @@ bash scripts/run.sh
 | `--real-printer` | Activa impresión real (requiere impresora configurada) |
 | `--headless` | Sin ventana gráfica (útil para tests) |
 | `--diagnostic` | Verifica cámara e impresora sin capturar |
+| `--ip-camera URL` | Conecta a cámara IP / RTSP con PyAV y latencia cero |
+| `--webcam INDEX` | Selecciona el índice de la webcam local |
 
 **Ejemplos:**
 ```bash

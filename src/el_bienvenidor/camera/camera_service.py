@@ -187,3 +187,189 @@ class OpenCVCameraService:
                 self._capture = None
         with self._lock:
             self._latest_image = None
+
+
+def _load_av() -> Any:
+    try:
+        import av
+    except ModuleNotFoundError as error:
+        raise CameraUnavailableError("PyAV ('av') no está instalado en este entorno.") from error
+    return av
+
+
+class PyAVIPCameraService:
+    """
+    Captura de cámara IP / flujo RTSP mediante PyAV (FFmpeg).
+    Configurado para latencia cero con hilo en segundo plano que vacía constantemente el buffer.
+    Equivalente a:
+      ffplay -rtsp_transport tcp -fflags nobuffer -flags low_delay -framedrop "<url>"
+    """
+
+    def __init__(self, settings: CameraSettings) -> None:
+        self._settings = settings
+        self._container: Any | None = None
+        self._stream: Any | None = None
+        self._frame_id = 0
+        self._latest_image: Any | None = None
+        self._last_frame_monotonic = 0.0
+        self._lock = threading.Lock()
+        self._running = False
+        self._thread: threading.Thread | None = None
+
+    def _build_options(self) -> dict[str, str]:
+        options: dict[str, str] = {
+            "rtsp_transport": self._settings.rtsp_transport or "tcp",
+        }
+        if self._settings.low_delay:
+            # -fflags nobuffer: evita acumulación de cuadros en buffers de demuxer
+            # -flags low_delay: fuerza decodificación de bajo retardo
+            # probesize y analyzeduration reducidos para conexión instantánea sin esperar análisis extenso
+            options["fflags"] = "nobuffer"
+            options["flags"] = "low_delay"
+            options["probesize"] = "1000000"
+            options["analyzeduration"] = "1000000"
+            options["max_delay"] = "500000"
+        return options
+
+    def _capture_worker(self) -> None:
+        """Hilo en segundo plano que drena continuamente el flujo RTSP/PyAV."""
+        while self._running:
+            container = self._container
+            stream = self._stream
+            if container is None or stream is None:
+                break
+            try:
+                for frame in container.decode(stream):
+                    if not self._running:
+                        break
+                    # Convertir a formato BGR24 estándar usado por OpenCV y el resto de Kippu
+                    image = frame.to_ndarray(format="bgr24")
+                    if image is not None and getattr(image, "size", 0) > 0:
+                        with self._lock:
+                            self._latest_image = image
+                            self._last_frame_monotonic = monotonic()
+            except Exception:
+                if not self._running:
+                    break
+                time.sleep(0.01)
+                break
+        self._running = False
+
+    def open(self) -> CameraProbe:
+        self.release()
+        url = self._settings.ip_url.strip()
+        if not url:
+            raise CameraUnavailableError("No se configuró camera.ip_url para la cámara IP.")
+
+        av = _load_av()
+        options = self._build_options()
+        try:
+            container = av.open(url, mode="r", options=options, timeout=(5.0, 2.0))
+        except Exception as error:
+            raise CameraUnavailableError(f"No se pudo conectar a la cámara IP en {url}: {error}") from error
+
+        video_streams = container.streams.video
+        if not video_streams:
+            try:
+                container.close()
+            except Exception:
+                pass
+            raise CameraUnavailableError(f"El flujo en {url} no contiene pistas de video.")
+
+        stream = video_streams[0]
+        if self._settings.low_delay:
+            try:
+                stream.codec_context.flags |= 0x00080000  # AV_CODEC_FLAG_LOW_DELAY
+            except Exception:
+                pass
+        try:
+            stream.thread_type = "AUTO"
+        except Exception:
+            pass
+
+        # Leer el primer cuadro para verificar recepción e inicializar dimensiones
+        first_image = None
+        try:
+            for frame in container.decode(stream):
+                first_image = frame.to_ndarray(format="bgr24")
+                break
+        except Exception as error:
+            try:
+                container.close()
+            except Exception:
+                pass
+            raise CameraUnavailableError(f"Error al leer el primer cuadro de la cámara IP: {error}") from error
+
+        if first_image is None or getattr(first_image, "size", 0) == 0:
+            try:
+                container.close()
+            except Exception:
+                pass
+            raise CameraUnavailableError("La cámara IP no entregó cuadros de video iniciales.")
+
+        self._container = container
+        self._stream = stream
+        with self._lock:
+            self._latest_image = first_image
+            self._last_frame_monotonic = monotonic()
+
+        self._running = True
+        self._thread = threading.Thread(
+            target=self._capture_worker,
+            daemon=True,
+            name="pyav-ipcamera-worker",
+        )
+        self._thread.start()
+
+        width = int(stream.codec_context.width or stream.width or first_image.shape[1])
+        height = int(stream.codec_context.height or stream.height or first_image.shape[0])
+        fps = float(stream.average_rate or stream.base_rate or 30.0)
+
+        return CameraProbe(
+            index=self._settings.index,
+            backend="pyav",
+            resolution=(width, height),
+            fps=fps,
+            focus_verified=False,
+            detail=f"Cámara IP PyAV/FFmpeg (low-delay, {self._settings.rtsp_transport}) en {url}",
+        )
+
+    def read(self) -> FramePacket | None:
+        if not self._running or self._container is None:
+            return None
+        # Si el flujo no recibió ningún cuadro reciente (p.ej. más de 2.5s), reportar fallo para reconexión
+        if monotonic() - self._last_frame_monotonic > 2.5:
+            return None
+        with self._lock:
+            image = self._latest_image
+        if image is None or getattr(image, "size", 0) == 0:
+            return None
+        self._frame_id += 1
+        height, width = image.shape[:2]
+        return FramePacket(FrameId(self._frame_id), monotonic(), image, (int(width), int(height)))
+
+    def is_open(self) -> bool:
+        return self._running and self._container is not None
+
+    def release(self) -> None:
+        self._running = False
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=1.5)
+        self._thread = None
+        if self._container is not None:
+            try:
+                self._container.close()
+            except Exception:
+                pass
+            finally:
+                self._container = None
+                self._stream = None
+        with self._lock:
+            self._latest_image = None
+
+
+def create_camera_service(settings: CameraSettings) -> CameraService:
+    """Instancia el servicio de cámara adecuado (webcam local OpenCV o cámara IP PyAV)."""
+    if settings.source_type in ("ip", "rtsp"):
+        return PyAVIPCameraService(settings)
+    return OpenCVCameraService(settings)

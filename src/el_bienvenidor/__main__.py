@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 from el_bienvenidor.app import build_application, run_diagnostic
-from el_bienvenidor.config import load_settings
+from el_bienvenidor.config import load_settings, validate_settings
 from el_bienvenidor.domain.errors import KippuError
 from el_bienvenidor.infra.logging import configure_logging
 from el_bienvenidor.services.retention import purge_now
@@ -19,6 +20,8 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--simulate", action="store_true", help="Simula cámara, saludo, rostro e impresión.")
     parser.add_argument("--headless", action="store_true", help="No abre ventana; útil para diagnósticos y automatización.")
     parser.add_argument("--diagnostic", action="store_true", help="Sondea cámara e impresora sin crear un trabajo.")
+    parser.add_argument("--ip-camera", type=str, default=None, help="URL de cámara IP / RTSP (usa PyAV sin latencia). Anula camera.source_type a 'ip'.")
+    parser.add_argument("--webcam", type=int, default=None, help="Índice de webcam local a utilizar. Anula camera.source_type a 'webcam'.")
     return parser
 
 
@@ -26,6 +29,26 @@ def main() -> int:
     arguments = _parser().parse_args()
     try:
         settings = load_settings(arguments.config)
+        if arguments.ip_camera:
+            settings = replace(
+                settings,
+                camera=replace(
+                    settings.camera,
+                    source_type="ip",
+                    ip_url=arguments.ip_camera,
+                ),
+            )
+            validate_settings(settings)
+        elif arguments.webcam is not None:
+            settings = replace(
+                settings,
+                camera=replace(
+                    settings.camera,
+                    source_type="webcam",
+                    index=arguments.webcam,
+                ),
+            )
+            validate_settings(settings)
         configure_logging(settings.logging)
         purge_now(settings.storage)
         if arguments.diagnostic:

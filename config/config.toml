@@ -1,5 +1,13 @@
 [camera]
+# Tipo de cámara: "webcam" o "ip"
+source_type = "webcam"
+# Para webcam: índice del dispositivo local
 index = 1
+# Para cámara IP: URL del flujo RTSP o HTTP mediante PyAV/FFmpeg sin latencia
+# source_type = "ip"
+# ip_url = "rtsp://frww:nc6dd3@192.168.1.10:554/live/ch0"
+# rtsp_transport = "tcp"
+# low_delay = true
 # "auto" usa V4L2/GStreamer en Linux, DirectShow/MSMF en Windows y el fallback de OpenCV.
 backend = "auto"
 width = 640
