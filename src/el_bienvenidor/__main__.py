@@ -22,6 +22,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--diagnostic", action="store_true", help="Sondea cámara e impresora sin crear un trabajo.")
     parser.add_argument("--ip-camera", type=str, default=None, help="URL de cámara IP / RTSP (usa PyAV sin latencia). Anula camera.source_type a 'ip'.")
     parser.add_argument("--webcam", type=int, default=None, help="Índice de webcam local a utilizar. Anula camera.source_type a 'webcam'.")
+    parser.add_argument("--ptz-track", action="store_true", help="Habilita seguimiento de rostro motorizado ONVIF PTZ.")
     return parser
 
 
@@ -49,6 +50,14 @@ def main() -> int:
                 ),
             )
             validate_settings(settings)
+        if arguments.ptz_track:
+            settings = replace(
+                settings,
+                ptz=replace(
+                    settings.ptz,
+                    enabled=True,
+                ),
+            )
         configure_logging(settings.logging)
         purge_now(settings.storage)
         if arguments.diagnostic:

@@ -16,6 +16,7 @@ dependencies = [
     "pywin32>=306; platform_system == 'Windows'",
     "tomli>=2.0; python_version < '3.11'",
     "av>=17.1.0",
+    "onvif-zeep>=0.2.12",
 ]
 
 [project.scripts]

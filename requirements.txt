@@ -22,6 +22,7 @@ opencv-python>=4.8
 mediapipe>=0.10
 Pillow>=10.0
 av>=14.0
+onvif-zeep>=0.2.12
 tomli>=2.0; python_version < "3.11"
 
 # --- Windows únicamente (impresión GDI) --------------------------------------

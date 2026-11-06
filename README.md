@@ -104,6 +104,13 @@ index = 0              # Índice para webcam local
 # rtsp_transport = "tcp"
 # low_delay = true
 
+[ptz]
+enabled = false         # Activar seguimiento facial motorizado ONVIF PTZ
+# Si se deja vacío, host y credenciales se extraen de camera.ip_url automáticamente
+port = 8899             # Puerto ONVIF (8899, 80 o según la cámara)
+pan_speed = 0.30        # Velocidad de giro horizontal
+tilt_speed = 0.25       # Velocidad de giro vertical
+
 [print]
 dry_run = true      # Cambiar a false para imprimir de verdad
 printer_name = ""   # Nombre exacto de la impresora en CUPS/Windows
@@ -139,6 +146,7 @@ bash scripts/run.sh
 | `--diagnostic` | Verifica cámara e impresora sin capturar |
 | `--ip-camera URL` | Conecta a cámara IP / RTSP con PyAV y latencia cero |
 | `--webcam INDEX` | Selecciona el índice de la webcam local |
+| `--ptz-track` | Activa seguimiento motorizado de rostro (ONVIF PTZ) |
 
 **Ejemplos:**
 ```bash

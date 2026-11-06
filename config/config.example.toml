@@ -60,3 +60,21 @@ form_height = 720
 [logging]
 directory = "logs"
 level = "INFO"
+
+[ptz]
+# Habilita el movimiento y seguimiento de rostro automático en la cámara IP
+enabled = false
+# Si se deja vacío host/user/password, se obtienen automáticamente de camera.ip_url
+host = ""
+port = 8899
+user = ""
+password = ""
+profile_token = ""
+pan_speed = 0.30
+tilt_speed = 0.25
+# Zona muerta (8% del centro): si el rostro está centrado, la cámara no vibra ni se mueve
+deadzone_x = 0.08
+deadzone_y = 0.08
+command_rate_hz = 10.0
+invert_pan = false
+invert_tilt = false

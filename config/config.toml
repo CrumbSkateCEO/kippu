@@ -57,3 +57,20 @@ form_height = 720
 [logging]
 directory = "logs"
 level = "INFO"
+
+[ptz]
+# Habilitar movimiento y seguimiento de rostro para cámara IP
+enabled = true
+# Si se deja vacío, toma automáticamente host y credenciales de camera.ip_url
+host = ""
+port = 8899
+user = ""
+password = ""
+profile_token = ""
+pan_speed = 0.30
+tilt_speed = 0.25
+deadzone_x = 0.5
+deadzone_y = 0.5
+command_rate_hz = 10.0
+invert_pan = true
+invert_tilt = false

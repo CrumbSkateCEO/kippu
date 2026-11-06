@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 from el_bienvenidor.camera.camera_service import CameraService, OpenCVCameraService, create_camera_service
+from el_bienvenidor.camera.ptz_tracker import NoopPtzTracker, OnvifPtzTracker, create_ptz_tracker
 from el_bienvenidor.composition.layout import default_layout
 from el_bienvenidor.config import AppSettings
 from el_bienvenidor.core.clock import Clock, SystemClock
@@ -93,6 +94,7 @@ class Application:
     worker: JobWorker
     printer: PrintBackend
     view: FullscreenView
+    ptz_tracker: OnvifPtzTracker | NoopPtzTracker
     error_acknowledge_seconds: float = 3.0
     headless: bool = False
     _last_frame: FramePacket | None = None
@@ -152,6 +154,7 @@ class Application:
         self.worker.stop(timeout_s=5.0)
         self.pose_detector.close()
         self.camera.release()
+        self.ptz_tracker.stop()
         self.view.close()
         if self.state_manager.state is not AppState.STOPPED:
             self.state_manager.dispatch(AppEvent(AppEventType.STOP), self.clock.monotonic())
@@ -218,6 +221,11 @@ class Application:
             return
         self._consecutive_read_failures = 0
         self._camera_retry_attempts = 0
+        if self.settings.ptz.enabled:
+            try:
+                self.ptz_tracker.connect()
+            except Exception as error:
+                LOGGER.warning("PTZ ONVIF: no se pudo iniciar seguimiento: %s", error)
         self.state_manager.dispatch(AppEvent(AppEventType.STARTUP_READY), now)
 
     def _tick_camera_and_vision(self, now: float) -> None:
@@ -238,6 +246,18 @@ class Application:
             observation = self.pose_detector.observe(frame)
             self._last_landmark_map = self.pose_detector.landmark_map()
             if state in {AppState.IDLE, AppState.GREETING_HELD}:
+                if (
+                    self._last_landmark_map
+                    and self._last_landmark_map.face
+                    and self._last_landmark_map.face.points
+                ):
+                    face_points = self._last_landmark_map.face.points
+                    avg_x = sum(p.x for p in face_points) / len(face_points)
+                    avg_y = sum(p.y for p in face_points) / len(face_points)
+                    h, w = frame.image_bgr.shape[:2]
+                    self.ptz_tracker.update(avg_x * w, avg_y * h, w, h)
+                else:
+                    self.ptz_tracker.clear_target()
                 gate_state = self.gesture_gate.update(observation, now)
                 if state is AppState.IDLE and observation.salute_detected:
                     self.state_manager.dispatch(AppEvent(AppEventType.GREETING_STARTED), now)
@@ -246,6 +266,8 @@ class Application:
                 elif state is AppState.GREETING_HELD and gate_state.ready:
                     self.state_manager.dispatch(AppEvent(AppEventType.HOLD_MET), now)
                     self.gesture_gate.reset()
+            else:
+                self.ptz_tracker.clear_target()
         if self.state_manager.countdown_finished(now):
             self._request_capture(now)
 
@@ -323,8 +345,10 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
         face_detector: FaceDetector = SimulatedFaceDetector()
         printer: PrintBackend = DryRunPrintBackend()
         monitor: PrintMonitor = NoopQueueMonitor()
+        ptz_tracker: OnvifPtzTracker | NoopPtzTracker = NoopPtzTracker()
     else:
         camera = create_camera_service(settings.camera)
+        ptz_tracker = create_ptz_tracker(settings.ptz, ip_url=settings.camera.ip_url)
         models_dir = settings.project_root / "assets" / "models"
         use_opencv = (
             settings.vision.backend == "opencv"
@@ -373,6 +397,7 @@ def build_application(settings: AppSettings, *, real_printer: bool = False, simu
         worker=worker,
         printer=printer,
         view=HeadlessView() if headless else OpenCVFullscreenView(settings.ui),
+        ptz_tracker=ptz_tracker,
         headless=headless,
     )
 
@@ -383,6 +408,11 @@ def run_diagnostic(settings: AppSettings, real_printer: bool) -> int:
     try:
         camera_probe = application.camera.open()
         print(f"CAMERA: {camera_probe.resolution[0]}x{camera_probe.resolution[1]} @ {camera_probe.fps:.1f} FPS — {camera_probe.detail}")
+        if settings.ptz.enabled:
+            if application.ptz_tracker.connect():
+                print("PTZ: Conectado a cámara ONVIF.")
+            else:
+                print("PTZ: No se pudo conectar a la cámara ONVIF.")
         printer_probe = application.printer.probe()
         print(f"PRINTER: {printer_probe.printer_name} — {printer_probe.health.value} — {printer_probe.detail}")
         print(
@@ -396,4 +426,5 @@ def run_diagnostic(settings: AppSettings, real_printer: bool) -> int:
     finally:
         application.camera.release()
         application.pose_detector.close()
+        application.ptz_tracker.stop()
         application.worker.stop(timeout_s=0.1)

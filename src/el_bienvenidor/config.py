@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from el_bienvenidor.camera.ptz_tracker import PtzSettings
 from el_bienvenidor.domain.errors import ConfigurationError
 
 try:  # Python 3.11+
@@ -87,6 +88,7 @@ class AppSettings:
     storage: StorageSettings
     ui: UiSettings
     logging: LoggingSettings
+    ptz: PtzSettings
     project_root: Path
 
 
@@ -121,6 +123,7 @@ def load_settings(path: Path) -> AppSettings:
     storage = _table(raw, "storage")
     ui = _table(raw, "ui")
     logging = _table(raw, "logging")
+    ptz_raw = _table(raw, "ptz")
     printer_name = str(printing.get("printer_name", "")).strip() or None
     settings = AppSettings(
         camera=CameraSettings(
@@ -175,6 +178,21 @@ def load_settings(path: Path) -> AppSettings:
         logging=LoggingSettings(
             directory=_relative_to_root(str(logging.get("directory", "logs")), root),
             level=str(logging.get("level", "INFO")).upper(),
+        ),
+        ptz=PtzSettings(
+            enabled=bool(ptz_raw.get("enabled", False)),
+            host=str(ptz_raw.get("host", "")),
+            port=int(ptz_raw.get("port", 8899)),
+            user=str(ptz_raw.get("user", "")),
+            password=str(ptz_raw.get("password", "")),
+            profile_token=str(ptz_raw.get("profile_token", "")),
+            pan_speed=float(ptz_raw.get("pan_speed", 0.30)),
+            tilt_speed=float(ptz_raw.get("tilt_speed", 0.25)),
+            deadzone_x=float(ptz_raw.get("deadzone_x", 0.08)),
+            deadzone_y=float(ptz_raw.get("deadzone_y", 0.08)),
+            command_rate_hz=float(ptz_raw.get("command_rate_hz", 10.0)),
+            invert_pan=bool(ptz_raw.get("invert_pan", False)),
+            invert_tilt=bool(ptz_raw.get("invert_tilt", False)),
         ),
         project_root=root,
     )
